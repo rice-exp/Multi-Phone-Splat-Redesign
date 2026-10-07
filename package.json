@@ -1,0 +1,9 @@
+{
+  "name": "synced-splat-studio-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A guided, simulation-first interface for the Multi-Phone-Splat capture rig",
+  "scripts": { "start": "node dev-server.mjs", "dev": "node dev-server.mjs", "test": "node --test" },
+  "engines": { "node": ">=20" }
+}
