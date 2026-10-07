@@ -304,17 +304,22 @@ a {
 
 .brand>svg {
   margin-top:3px;
+  flex-shrink:0;
+  width:26px;
+  height:26px;
 }
 
 .brand>div {
-  font-size:23px;
-  letter-spacing:-1px;
+  min-width:0;
+  font-size:16px;
+  letter-spacing:-.3px;
   font-weight:720;
-  line-height:1.05;
+  line-height:1.25;
 }
 
 .brand span {
-  font-weight:400;
+  display:block;
+  font-weight:inherit;
 }
 
 .brand small {
@@ -2474,13 +2479,8 @@ dialog::backdrop {
 
 .participant-header>a {
   font-size:14px;
-  letter-spacing:4px;
+  letter-spacing:.3px;
   font-weight:650;
-}
-
-.participant-header>a span {
-  font-weight:300;
-  color:#afc1a5;
 }
 
 .participant-header>.pill {
@@ -2640,7 +2640,7 @@ dialog::backdrop {
     padding-left:3px;
   }
   .brand>div {
-    font-size:21px;
+    font-size:15px;
   }
   .brand small {
     font-size:6px;
@@ -2771,7 +2771,7 @@ dialog::backdrop {
     width:26px;
   }
   .brand>div {
-    font-size:22px;
+    font-size:17px;
   }
   .brand small {
     font-size:6px;

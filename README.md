@@ -1,10 +1,10 @@
-# Splat Studio — Multi-Phone-Splat Redesign
+# Rice Experiential Pixels Lab — Multi-Phone-Splat Redesign
 
 A guided interface for a multi-phone 4D capture rig. This first version is a **working UI prototype**: select cameras, preview settings, walk through capture, recover a simulated transfer failure, review frames, and navigate a sample point scene.
 
 **No phone commands, real camera streams, calibration solves, file transfers, or model training run in this version.** The three-stage participant display does work across devices through the local UI server. Illustrative views and results are labeled as simulations.
 
-![Splat Studio camera setup](docs/screenshots/splat-studio-ui.jpg)
+![Rice Experiential Pixels Lab camera setup](docs/screenshots/splat-studio-ui.jpg)
 
 ## Run it on your computer
 

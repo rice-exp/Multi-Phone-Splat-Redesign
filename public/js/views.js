@@ -12,7 +12,7 @@ export function shell(state,{serverOnline=true,displays=0}={}) {
   const warnings=issueCount(state);
   return `<a class="skip-link" href="#workspace">Skip to workspace</a>
   <aside class="sidebar">
-    <a class="brand" href="#prepare">${icon('aperture',30)}<div>Splat<span>Studio</span><small>EXP LAB · CAPTURE WORKSPACE</small></div></a>
+    <a class="brand" href="#prepare">${icon('aperture',30)}<div><span>Rice Experiential Pixels Lab</span><small>CAPTURE WORKSPACE</small></div></a>
     <div class="sidebar-label">YOUR WORKFLOW</div>
     <nav class="step-nav" aria-label="Capture workflow">${STEPS.map((s,i)=>`<button data-step="${s.id}" class="nav-step ${state.step===s.id?'active':''}" ${state.step===s.id?'aria-current="step"':''}><span class="nav-number">${String(i+1).padStart(2,'0')}</span><span><b>${s.name}</b><small>${s.detail}</small></span>${state.step===s.id?icon('chevron',15):''}</button>`).join('')}</nav>
     <div class="sidebar-bottom"><div class="rig-card"><div class="rig-icon">${icon('wifi',22)}</div><div><strong>Mobile rig 01</strong><span>Private network · demo</span></div><span class="small-dot"></span></div><button class="sidebar-action" data-action="network">${icon('settings',18)} Workspace settings</button><button class="sidebar-action" data-action="help">${icon('info',18)} A quick guide</button><div class="sidebar-version"><span>INTERFACE PREVIEW</span><span>v0.1</span></div></div>

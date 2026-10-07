@@ -42,7 +42,7 @@ const server=http.createServer(async(req,res)=>{
     res.end(req.method==='HEAD'?undefined:bytes);
   }catch(error){json(res,error.code==='ENOENT'?404:400,{error:error.code==='ENOENT'?'Not found':'Invalid request'});}
 });
-server.listen(port,host,()=>console.log(`Splat Studio UI: http://${host}:${port}\nParticipant display: http://${host}:${port}/participant.html\nSIMULATION ONLY — no camera or training commands are enabled.`));
+server.listen(port,host,()=>console.log(`Rice Experiential Pixels Lab UI: http://${host}:${port}\nParticipant display: http://${host}:${port}/participant.html\nSIMULATION ONLY — no camera or training commands are enabled.`));
 server.on('error',error=>{console.error(error.message);process.exitCode=1;});
 const close=()=>{for(const res of clients)res.end();server.close(()=>process.exit(0));};
 process.on('SIGINT',close);process.on('SIGTERM',close);

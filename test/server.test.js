@@ -7,7 +7,7 @@ test('UI server serves modules and relays participant state without device comma
   t.after(()=>child.kill('SIGTERM'));
   await Promise.race([once(child.stdout,'data'),once(child,'exit').then(()=>{throw Error('Server exited before startup');})]);
   const origin='http://127.0.0.1:14317';
-  const html=await fetch(origin);assert.equal(html.status,200);assert.match(await html.text(),/Splat Studio/);
+  const html=await fetch(origin);assert.equal(html.status,200);assert.match(await html.text(),/Rice Experiential Pixels Lab/);
   const js=await fetch(`${origin}/js/app.js`);assert.match(js.headers.get('content-type'),/javascript/);
   const invalid=await fetch(`${origin}/api/participant/state`,{method:'POST',body:JSON.stringify({phase:'pretend-recording'})});assert.equal(invalid.status,400);
   const external=await fetch(`${origin}/api/participant/state`,{method:'POST',headers:{Origin:'http://external.example'},body:JSON.stringify({phase:'done'})});assert.equal(external.status,403);

@@ -47,7 +47,7 @@ function modal(markup,className='') {
 }
 function closeDialog(){const dialog=overlays.querySelector('dialog');if(dialog){if(dialog.classList.contains('log-dialog'))logOpen=false;dialog.close();dialog.remove();}draftSettings=null;}
 function infoDialog(title,body,footer='') {
-  modal(`<div class="dialog-heading"><div><div class="eyebrow">SPLAT STUDIO / UI PREVIEW</div><h2>${title}</h2></div><button class="icon-button" data-action="close-dialog" aria-label="Close dialog">${icon('close')}</button></div><div class="issue-dialog-body">${body}</div><footer class="dialog-footer">${footer||button('Got it','close-dialog','primary')}</footer>`);
+  modal(`<div class="dialog-heading"><div><div class="eyebrow">RICE EXPERIENTIAL PIXELS LAB / UI PREVIEW</div><h2>${title}</h2></div><button class="icon-button" data-action="close-dialog" aria-label="Close dialog">${icon('close')}</button></div><div class="issue-dialog-body">${body}</div><footer class="dialog-footer">${footer||button('Got it','close-dialog','primary')}</footer>`);
 }
 function openParticipant() {
   // A user gesture is required by browsers. A named window is reused for subsequent takes.
@@ -224,8 +224,8 @@ const actionHandlers={
   'event-help':el=>{const id=el.dataset.id,event=el.dataset.event;closeDialog();modal(issueDialog(state,id,event),'issue-dialog');},
   'issue-to-logs':openLogs,logs:openLogs,'close-logs':closeDialog,
   'follow-events':()=>{logFollow=true;logUnread=0;byId('log-follow').checked=true;renderLogEntries();},
-  'export-log':()=>exportJSON({mode:'simulation',events:state.events},'splat-studio-activity.json'),
-  'export-session':()=>exportJSON({...state,exportedAt:new Date().toISOString(),mode:'simulation',notice:'UI demo. No real images, camera measurements, or trained splats.'},'splat-studio-session.json'),
+  'export-log':()=>exportJSON({mode:'simulation',events:state.events},'rice-experiential-pixels-lab-activity.json'),
+  'export-session':()=>exportJSON({...state,exportedAt:new Date().toISOString(),mode:'simulation',notice:'UI demo. No real images, camera measurements, or trained splats.'},'rice-experiential-pixels-lab-session.json'),
   participant:openParticipant,
   'copy-participant':async()=>{const link=new URL('/participant.html',location.href).href;try{await navigator.clipboard.writeText(link);toast('Participant display link copied.');}catch{infoDialog('Participant display link',`<p>Copy this link and open it on the rig’s display. For another device, use the server’s private-network address.</p><input aria-label="Participant link" value="${esc(link)}" readonly>`);}},
   rename:()=>infoDialog('Name this session',`<label>Session name<input id="rename-input" maxlength="80" value="${esc(state.sessionName)}" ${busy()?'disabled':''}></label>`,button('Cancel','close-dialog','secondary')+button('Save name','save-name','primary',busy()?'disabled':'')),
