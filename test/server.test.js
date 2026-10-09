@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+test('UI server serves modules and relays participant state without device commands',async t=>{
+  const child=spawn(process.execPath,['dev-server.mjs','--port=14317'],{cwd:new URL('..',import.meta.url),stdio:['ignore','pipe','pipe']});
+  t.after(()=>child.kill('SIGTERM'));
+  await Promise.race([once(child.stdout,'data'),once(child,'exit').then(()=>{throw Error('Server exited before startup');})]);
+  const origin='http://127.0.0.1:14317';
+  const html=await fetch(origin);assert.equal(html.status,200);assert.match(await html.text(),/Rice Experiential Pixels Lab/);
+  const js=await fetch(`${origin}/js/app.js`);assert.match(js.headers.get('content-type'),/javascript/);
+  const invalid=await fetch(`${origin}/api/participant/state`,{method:'POST',body:JSON.stringify({phase:'pretend-recording'})});assert.equal(invalid.status,400);
+  const external=await fetch(`${origin}/api/participant/state`,{method:'POST',headers:{Origin:'http://external.example'},body:JSON.stringify({phase:'done'})});assert.equal(external.status,403);
+  const controller=new AbortController();t.after(()=>controller.abort());
+  const stream=await fetch(`${origin}/api/participant/events`,{signal:controller.signal});
+  const reader=stream.body.getReader();assert.match(new TextDecoder().decode((await reader.read()).value),/"phase":"idle"/);
+  const post=await fetch(`${origin}/api/participant/state`,{method:'POST',headers:{Origin:origin},body:JSON.stringify({phase:'capturing',remaining:3,sessionName:'Test take'})});
+  assert.deepEqual(await post.json(),{ok:true,displays:1});
+  const event=new TextDecoder().decode((await reader.read()).value);assert.match(event,/"phase":"capturing"/);assert.match(event,/"simulation":true/);
+  controller.abort();
+});
