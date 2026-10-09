@@ -1107,7 +1107,7 @@ a {
 .app-footer {
   padding:8px 39px 22px;
   display:flex;
-  justify-content:space-between;
+  justify-content:flex-end;
   color:#a0ad94;
   font-size:8px;
   gap:15px;
@@ -1880,6 +1880,7 @@ a {
 }
 
 .viewer-bottom-overlay {
+  justify-content:flex-end;
   bottom:16px;
 }
 
@@ -2509,9 +2510,9 @@ dialog::backdrop {
 }
 
 .participant-main>h1 {
-  font-size:clamp(38px,5vw,65px);
+  font-size:clamp(32px,4vw,44px);
   font-weight:400;
-  letter-spacing:-2.2px;
+  letter-spacing:-1px;
   line-height:1.07;
   margin-top:18px;
 }
@@ -3030,9 +3031,6 @@ dialog::backdrop {
     padding:5px 18px 25px;
     font-size:7px;
   }
-  .app-footer>span:first-child {
-    display:none;
-  }
   .app-footer>span:last-child {
     margin:auto;
   }
@@ -3343,7 +3341,7 @@ dialog::backdrop {
     padding:40px 20px 20px;
   }
   .participant-main>h1 {
-    font-size:44px;
+    font-size:32px;
   }
   .participant-main>p {
     font-size:13px;

@@ -10,17 +10,17 @@
 <body class="participant-body">
   <header class="participant-header"><a href="/">Rice Experiential Pixels Lab</a><span id="connection" class="pill">Connecting…</span><button id="fullscreen" class="button dark-button">Full screen</button></header>
   <main class="participant-main">
-    <div class="eyebrow">PARTICIPANT DISPLAY · SIMULATION</div>
-    <h1 id="participant-title">A little movement.<br>A new dimension.</h1>
-    <p id="participant-instruction">Step into the marked area and wait for your operator.</p>
+    <div class="eyebrow">SIMULATION</div>
+    <h1 id="participant-title">Capture status</h1>
+    <p id="participant-instruction">Stand in the marked area and wait for the operator.</p>
     <div class="participant-steps" aria-label="Capture stages">
-      <section data-participant-stage="preparing"><span class="participant-number">01</span><div><h2>Capture preparing</h2><p>Find your position. We’re checking the rig.</p></div><span class="stage-mark">○</span></section>
-      <section data-participant-stage="capturing"><span class="participant-number">02</span><div><h2>Capture in progress</h2><p>Follow your operator’s movement instructions.</p></div><strong id="participant-timer" class="participant-timer">—</strong></section>
-      <section data-participant-stage="done"><span class="participant-number">03</span><div><h2>Capture done</h2><p>You can relax. Your operator will guide you next.</p></div><span class="stage-mark">✓</span></section>
+      <section data-participant-stage="preparing"><span class="participant-number">01</span><div><h2>Preparing</h2></div><span class="stage-mark">○</span></section>
+      <section data-participant-stage="capturing"><span class="participant-number">02</span><div><h2>Capturing</h2></div><strong id="participant-timer" class="participant-timer">—</strong></section>
+      <section data-participant-stage="done"><span class="participant-number">03</span><div><h2>Complete</h2></div><span class="stage-mark">✓</span></section>
     </div>
     <div id="participant-alert" role="status" aria-live="polite"></div>
   </main>
-  <footer class="participant-footer"><span id="participant-session">Waiting for a session</span><span>All stages stay visible. Only the current stage lights up.</span></footer>
+  <footer class="participant-footer"><span id="participant-session">Waiting for a session</span></footer>
   <script type="module" src="/js/participant.js"></script>
 </body>
 </html>

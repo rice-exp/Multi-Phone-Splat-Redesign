@@ -4,9 +4,9 @@ export const STEPS = [
   {id:'prepare',name:'Prepare rig',detail:'Connect & configure',icon:'grid'},
   {id:'calibration',name:'Calibration',detail:'Check camera geometry',icon:'target'},
   {id:'capture',name:'Capture',detail:'Record & transfer',icon:'camera'},
-  {id:'frames',name:'Frame review',detail:'Inspect your take',icon:'frames'},
+  {id:'frames',name:'Frame review',detail:'Inspect frames',icon:'frames'},
   {id:'reconstruct',name:'Reconstruction',detail:'Build the scene',icon:'cube'},
-  {id:'results',name:'Splat review',detail:'Explore in 4D',icon:'aperture'}
+  {id:'results',name:'Splat review',detail:'Inspect results',icon:'aperture'}
 ];
 export const DEFAULT_SETTINGS = { exposure:8,iso:200,temperature:5600,contrast:100,frames:90,fps:30,quality:90,stagger:0 };
 const positions=['Front left','Front right','Right front','Right rear','Rear right','Rear left','Left rear','Left front'];

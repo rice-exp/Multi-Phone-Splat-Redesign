@@ -5,11 +5,11 @@ let lastState=null;
 function render(state) {
   lastState=state;
   document.querySelectorAll('[data-participant-stage]').forEach(el=>el.classList.toggle('active',el.dataset.participantStage===state.phase));
-  const instructions={idle:'Step into the marked area and wait for your operator.',preparing:'Find your position. Capture will begin shortly.',capturing:'Capture is in progress. Follow your operator’s instructions.',done:'Capture is complete. You can relax.',cancelled:'Capture stopped. Please wait for your operator.',interrupted:'The demo was interrupted. Please wait for your operator.'};
+  const instructions={idle:'Stand in the marked area and wait for the operator.',preparing:'Stay in position. Capture starts shortly.',capturing:'Follow the operator’s movement instructions.',done:'Capture complete. Wait for the operator’s instructions.',cancelled:'Capture stopped. Wait for the operator.',interrupted:'Capture interrupted. Wait for the operator.'};
   document.querySelector('#participant-instruction').textContent=instructions[state.phase]||instructions.idle;
   document.querySelector('#participant-timer').textContent=state.phase==='capturing'?formatTime(state.remaining):'—';
   document.querySelector('#participant-session').textContent=state.sessionName;
-  document.querySelector('#participant-alert').textContent=['cancelled','interrupted'].includes(state.phase)?'Capture is not complete. Your operator will help you.':'';
+  document.querySelector('#participant-alert').textContent=['cancelled','interrupted'].includes(state.phase)?'Capture incomplete.':'';
 }
 stream.onopen=()=>{connection.textContent='Display connected';connection.className='pill connected';if(lastState)render(lastState);};
 stream.onmessage=event=>{try{render(JSON.parse(event.data));connection.textContent='Display connected';connection.className='pill connected';}catch{connection.textContent='Waiting for valid status';}};
