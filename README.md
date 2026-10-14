@@ -1,6 +1,6 @@
 # Rice Experiential Pixels Lab — Multi-Phone-Splat Redesign
 
-A guided interface for a multi-phone 4D capture rig. **Prepare rig now connects to CameraScope through the existing lab installation.** It reads the original app’s phone inventory, checks each phone over UDP, embeds available MediaMTX streams, applies selected camera settings, and checks clock offsets.
+A guided interface for a multi-phone 4D capture rig. **Prepare rig connects to CameraScope through the existing lab installation.** It reads the original app’s phone inventory, checks each phone over UDP, starts/stops wireless streams for selected phones, displays live H.264 video through MediaMTX WebRTC, applies selected camera settings, and checks clock offsets. The Android app and original webapp require no code changes.
 
 The default page contains real connection controls. **Calibration, capture, transfers, reconstruction, and live participant capture status are not integrated yet.** The complete previous UI prototype is preserved separately at `/?demo=1`; its devices and results remain simulated.
 
@@ -12,7 +12,7 @@ For lab setup, supported commands, and the required hardware checks, read [Prepa
 
 1. Install Node.js 20 or newer from [nodejs.org](https://nodejs.org/). Restart your terminal after installation.
 2. In GitHub Desktop, choose **File → Clone repository → URL**, paste this repository’s URL, and choose a folder.
-3. Select the `feature/guided-capture-ui` branch if it has not yet been merged into `main`.
+3. Select the `Camerascope-features` branch for the wireless live-view integration.
 4. Choose **Repository → Open in Terminal** in GitHub Desktop.
 5. Run:
 
@@ -20,7 +20,9 @@ For lab setup, supported commands, and the required hardware checks, read [Prepa
    npm start
    ```
 
-6. Open **http://127.0.0.1:4317**. On the lab computer, also run the original app on port **4173**. Without it, Prepare rig shows a connection/setup message rather than sample phones. Leave both terminals running. Press **Ctrl+C** to stop a server.
+6. Open **http://127.0.0.1:4317**. On the lab computer, also run the original app on port **4173**, with its existing MediaMTX runtime installed. Confirm its PC destination IP, keep CameraScope open on the phones, select cameras here, and click **Start selected previews**. Without the original server, Prepare rig shows a connection/setup message rather than sample phones. Leave both terminals running. Press **Ctrl+C** to stop a server.
+
+Each camera card distinguishes phone response, gateway availability, and browser playback. **Live** appears only after displayed frames advance; stalled video loses the green label and reconnects automatically. **Retry** reconnects the browser without sending a phone command. **Enlarge** expands the view. **Stop selected streams** disables wireless video without stopping the phone’s camera pipeline. Stream changes can restart that pipeline; finish takes/recordings first. Preview controls use UDP only and need no USB/ADB or Python.
 
 There are no packages to install; `npm install` is unnecessary. `node dev-server.mjs` is equivalent to `npm start`. Do not open `index.html` directly: JavaScript modules and the participant relay need the server. Reload the browser after editing a file; this prototype has no build step or automatic reload.
 
@@ -74,6 +76,7 @@ Suggested ownership: one person handles setup/calibration, one handles capture/e
 | --- | --- |
 | `lib/rig-service.mjs` | Original backend adapter, CameraScope UDP checks, selected settings and CLI clock offset checks |
 | `public/js/rig-app.js` | Real Prepare rig interface, status polling, previews, settings review and error dialogs |
+| `public/js/live-preview.js` | Receive-only WHEP player, decoded-frame status, reconnect and session cleanup |
 | `public/js/rig-model.js` | Status expiry, selection and white balance comparison |
 | `public/js/entry.js` | Separates the default real interface from the explicit UI demo |
 | `public/js/views.js` | Guided pages, camera cards, settings and error dialogs |
@@ -93,4 +96,4 @@ Run **`npm test`** before opening a pull request. GitHub Actions runs the same c
 
 This redesign follows [rice-exp-lab/Multi-Phone-Splat](https://github.com/rice-exp-lab/Multi-Phone-Splat). The reviewed local source was commit `85ad82f41d2dcfd2187cd974993c6737b99aaf49` on `codex/calibration-splat-cleanup`, ahead of that repository’s saved `main`. The revision deployed on the physical rig remains unconfirmed.
 
-Pure calculations from `lib/camerascope-capture.js` were ported: saved/dropped counts, intervals accounting for missing sequence indices, and cross-camera timing from `actualLeaderNs`. Prepare rig uses its existing API/CLI conventions and the exact UDP state/settings contract verified in [CloneCameraScope](https://github.com/rice-exp/CloneCameraScope) at `1c17f73`. Verify the deployed revision and run the [lab acceptance checks](docs/PREPARE-RIG.md#lab-acceptance-checks) before relying on this integration for a session.
+Pure calculations from `lib/camerascope-capture.js` were ported: saved/dropped counts, intervals accounting for missing sequence indices, and cross-camera timing from `actualLeaderNs`. Wireless preview integration was checked against original `main` at `8060792` and the UDP state/settings/stream contract in [CloneCameraScope](https://github.com/rice-exp/CloneCameraScope) at `1c17f73`. Browser playback follows [MediaMTX’s WebRTC/WHEP interface](https://mediamtx.org/docs/read/web-browsers). Verify the deployed revision and run the [lab acceptance checks](docs/PREPARE-RIG.md#lab-acceptance-checks) before relying on this integration for a session.

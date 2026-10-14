@@ -4,7 +4,7 @@
 
 Native ES modules and plain HTML/CSS follow the original browser/Node structure without a package installation step. `entry.js` loads the real `rig-app.js` by default or the existing `app.js` only at `/?demo=1`. Demo state and device observations are separate. `RigService` lives on the server; the browser cannot supply executable paths, arbitrary UDP messages, backend URLs, or phone addresses for commands.
 
-Prepare rig reads the original backend's inventory and gateway state, queries CameraScope over UDP, and applies selected settings over UDP with readback, and invokes the installed CLI for clock checks. See [setup and exact limits](PREPARE-RIG.md). Status responses contain phones, timestamps, independent preview/response/color/clock observations, errors, and the server event log. UI polling updates existing cards rather than recreating active video iframes or form inputs.
+Prepare rig reads the original backend's inventory and gateway state, queries CameraScope over UDP, applies selected settings and stream controls with readback, and invokes the installed CLI for clock checks. See [setup and exact limits](PREPARE-RIG.md). Status responses contain phones, timestamps, independent preview/response/color/clock observations, errors, and the server event log. UI polling preserves active video elements and form inputs.
 
 | Endpoint | Contract |
 | --- | --- |
@@ -12,6 +12,10 @@ Prepare rig reads the original backend's inventory and gateway state, queries Ca
 | `POST /api/rig/refresh` | Force fresh inventory/status read. |
 | `POST /api/rig/settings` | `{ids, settings:{iso,exposureMs,frameRate,awbMode}}`; validated, selected phones only, per-phone results. |
 | `POST /api/rig/sync` | `{ids}`; one successful CLI result required per selected host. |
+| `POST /api/rig/preview-start` | `{ids}`; configure selected phones with trusted gateway route ports and `pcIp`, enable streaming and start a stopped pipeline. Verify state independently. |
+| `POST /api/rig/preview-stop` | `{ids}`; disable streaming on selected phones without sending `capture:false`. Verify state independently. |
+
+`live-preview.js` creates receive-only video peers and gathers ICE before posting SDP to `http://LAB-COMPUTER:8889/cam-N/whep`. It uses no external STUN servers or media permissions. The WHEP session Location is restricted to the gateway origin and route before cleanup DELETE. Failed connections and missing frames reconnect with a capped exponential delay; phone commands are never automatically retried. Decoded/displayed frame progress drives the Live label; gateway readiness and successful negotiation alone do not. Peers, timers and gateway sessions are released on route loss, retry, removed inventory and page exit. A loopback backend uses the operator's reachable hostname; a private remote backend uses that backend's hostname.
 
 Rig writes require same-origin JSON plus `X-Rig-Request: 1`, reject oversized input, and serialize operations. Configuration/paths come from the server's trusted original backend. The original app's current job must be known and idle. There is no distributed lock across the two apps. Commands are not automatically retried after a timeout because the original action may have reached the phone.
 

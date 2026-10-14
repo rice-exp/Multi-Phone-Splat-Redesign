@@ -27,7 +27,7 @@ const server=http.createServer(async(req,res)=>{
       const value=JSON.parse(body||'{}');
       if(!value||typeof value!=='object'||Array.isArray(value))return json(res,400,{error:'Expected a JSON object.'});
       if(url.pathname==='/api/rig/refresh')return json(res,200,await rig.refresh(true));
-      if(!['/api/rig/settings','/api/rig/sync'].includes(url.pathname))return json(res,404,{error:'Not found'});
+      if(!['/api/rig/settings','/api/rig/sync','/api/rig/preview-start','/api/rig/preview-stop'].includes(url.pathname))return json(res,404,{error:'Not found'});
       try{return json(res,200,await rig.operate(url.pathname.split('/').at(-1),value.ids,value.settings));}
       catch(error){return json(res,error.status||503,{error:error.message,code:error.code||'RIG_ERROR',next:error.next});}
     }

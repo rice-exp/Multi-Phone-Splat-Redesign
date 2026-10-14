@@ -10,14 +10,56 @@ const summary={count:30,selectedOffsetNs:10000,selectedErrorBoundNs:20000};
 function fixture(overrides={}) {
   let clock=100000, fail=false, running=false, configFail=false, syncReport, commands=[], executions=[];
   const states=new Map(['192.168.50.101','192.168.50.102'].map(ip=>[ip,{iso:100,exposureMs:8,frameDurationMs:1000/30,autoExposureEnabled:false,isCapturing:true,colorProcessing:{awbMode:'OFF',awbLock:false}}]));
-  const config={phones:[{id:'cam-1',name:'Front',ip:'192.168.50.101'},{id:'cam-2',name:'Rear',ip:'192.168.50.102'}], cameraScopeRoot:'/lab/CameraScope', pythonExecutable:'python',iso:100,exposureMs:8,frameRate:30,colorProcessing:{awbMode:'OFF',awbLock:false}};
+  const config={phones:[{id:'cam-1',name:'Front',ip:'192.168.50.101'},{id:'cam-2',name:'Rear',ip:'192.168.50.102'}], pcIp:'192.168.50.10', cameraScopeRoot:'/lab/CameraScope', pythonExecutable:'python',iso:100,exposureMs:8,frameRate:30,colorProcessing:{awbMode:'OFF',awbLock:false}};
   const service=new RigService({now:()=>clock,request:async url=>{
     if(configFail)throw Error('connection refused');
-    const data=url.endsWith('/config')?config:url.endsWith('/job')?{state:running?'running':'idle'}:{running:true,routes:[{name:'cam-1',ip:config.phones[0].ip,ready:true}]};
+    const data=url.endsWith('/config')?config:url.endsWith('/job')?{state:running?'running':'idle'}:{running:true,routes:config.phones.map((phone,i)=>({name:`cam-${i+1}`,ip:phone.ip,videoPort:5004+i*2,metadataPort:6004+i*2,ready:i===0}))};
     return {ok:true,json:async()=>data};
-  },command:async(ip,payload)=>{commands.push({ip,payload});if(fail&&ip.endsWith('102'))throw Object.assign(Error('Timed out'),{code:'PHONE_TIMEOUT'});if(payload.cmd==='set'){const {cmd,...patch}=payload;Object.assign(states.get(ip),patch);}return {ok:true,state:{...states.get(ip)}};},run:async(exe,args)=>{executions.push({exe,args});return {stdout:JSON.stringify(args.includes('sync-many')?(syncReport||{results:[{host:'192.168.50.101',ok:true,summary},{host:'192.168.50.102',ok:true,summary}]}):{ok:true})};},...overrides});
-  return {service,config,commands,executions,advance:n=>clock+=n,offline:()=>fail=true,backendOffline:()=>configFail=true,running:()=>running=true,report:value=>syncReport=value};
+  },command:async(ip,payload)=>{commands.push({ip,payload});if(fail&&ip.endsWith('102'))throw Object.assign(Error('Timed out'),{code:'PHONE_TIMEOUT'});if(payload.cmd==='set'){const {cmd,capture,...patch}=payload;Object.assign(states.get(ip),patch);if(typeof capture==='boolean')states.get(ip).isCapturing=capture;}return {ok:true,state:{...states.get(ip)}};},run:async(exe,args)=>{executions.push({exe,args});return {stdout:JSON.stringify(args.includes('sync-many')?(syncReport||{results:[{host:'192.168.50.101',ok:true,summary},{host:'192.168.50.102',ok:true,summary}]}):{ok:true})};},...overrides});
+  return {service,config,states,commands,executions,advance:n=>clock+=n,offline:()=>fail=true,backendOffline:()=>configFail=true,running:()=>running=true,report:value=>syncReport=value};
 }
+
+test('wireless preview start uses only selected routes and preserves camera settings',async()=>{
+  const f=fixture();f.states.get('192.168.50.102').isCapturing=false;
+  const result=await f.service.operate('preview-start',['cam-2']);
+  assert.equal(result.ok,true);assert.equal(f.executions.length,0);
+  assert.deepEqual(f.commands.filter(c=>c.payload.cmd==='set'),[{ip:'192.168.50.102',payload:{cmd:'set',udpHost:'192.168.50.10',udpVideoPort:5006,udpMetadataPort:6006,streamEnabled:true,capture:true}}]);
+  assert.equal(f.states.get('192.168.50.102').iso,100);
+  assert.equal(f.states.get('192.168.50.101').streamEnabled,undefined);
+  assert.equal(f.config.iso,100);
+});
+
+test('an active preview pipeline is not explicitly reopened; stop never stops capture',async()=>{
+  const f=fixture();await f.service.operate('preview-start',['cam-1']);
+  assert.equal(f.commands.find(c=>c.payload.cmd==='set').payload.capture,undefined);
+  await f.service.operate('preview-stop',['cam-1']);
+  assert.deepEqual(f.commands.filter(c=>c.payload.cmd==='set').at(-1).payload,{cmd:'set',streamEnabled:false});
+  assert.equal(f.states.get('192.168.50.101').isCapturing,true);
+});
+
+test('stream acknowledgements without matching destination readback fail per phone',async()=>{
+  const f=fixture({command:async()=>({ok:true,state:{isCapturing:true,streamEnabled:true,udpHost:'192.168.1.1'}})});
+  const result=await f.service.operate('preview-start',['cam-1']);
+  assert.equal(result.ok,false);assert.equal(result.results[0].error.code,'PREVIEW_NOT_CONFIRMED');
+  const g=fixture();g.offline();const partial=await g.service.operate('preview-start',['cam-1','cam-2']);
+  assert.equal(partial.results[0].ok,true);assert.equal(partial.results[1].error.code,'PHONE_OFFLINE');
+});
+
+test('preview mutations reject workflow, recording, destination and missing gateway routes',async()=>{
+  const f=fixture();f.running();await assert.rejects(()=>f.service.operate('preview-start',['cam-1']),{code:'WORKFLOW_BUSY'});
+  const g=fixture();g.states.get('192.168.50.101').isH264Recording=true;
+  await assert.rejects(()=>g.service.operate('preview-stop',['cam-1']),{code:'PHONE_RECORDING'});
+  const h=fixture();h.config.pcIp='127.0.0.1';await assert.rejects(()=>h.service.operate('preview-start',['cam-1']),{code:'DESTINATION_INVALID'});
+  const missing=fixture({request:async url=>({ok:true,json:async()=>url.endsWith('/config')?f.config:url.endsWith('/job')?{state:'idle'}:{running:true,routes:[]}})});
+  await assert.rejects(()=>missing.service.operate('preview-start',['cam-1']),{code:'PREVIEW_ROUTE_MISSING'});
+  for(const current of [f,g,h,missing])assert.equal(current.commands.filter(c=>c.payload.cmd==='set').length,0);
+});
+
+test('preview changes clear clock results and work without Python',async()=>{
+  const f=fixture();await f.service.operate('sync',['cam-1']);assert.ok(f.service.status().phones[0].sync);
+  f.config.pythonExecutable=null;await f.service.operate('preview-start',['cam-1']);
+  assert.equal(f.service.status().phones[0].sync,null);
+});
 test('real inventory and response/gateway status replace demo devices',async()=>{
   const f=fixture();f.offline();const status=await f.service.refresh();
   assert.equal(status.phones.length,2);assert.equal(status.phones[0].responding,true);assert.equal(status.phones[0].previewReady,true);
