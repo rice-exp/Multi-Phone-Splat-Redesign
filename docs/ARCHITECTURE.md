@@ -2,9 +2,20 @@
 
 ## Current implementation
 
-Native ES modules and plain HTML/CSS follow the original browser/Node structure without a package installation step. `model.js` holds testable state operations, `views.js` markup, `app.js` events/demo jobs, and `viewer.js` rendering/input listeners. After design approval, split the app controller into service, capture, log, and history modules before adding substantial hardware logic.
+Native ES modules and plain HTML/CSS follow the original browser/Node structure without a package installation step. `entry.js` loads the real `rig-app.js` by default or the existing `app.js` only at `/?demo=1`. Demo state and device observations are separate. `RigService` lives on the server; the browser cannot supply executable paths, arbitrary UDP messages, backend URLs, or phone addresses for commands.
 
-Only the participant display currently communicates between devices:
+Prepare rig reads the original backend's inventory and gateway state, queries CameraScope over UDP, and applies selected settings over UDP with readback, and invokes the installed CLI for clock checks. See [setup and exact limits](PREPARE-RIG.md). Status responses contain phones, timestamps, independent preview/response/color/clock observations, errors, and the server event log. UI polling updates existing cards rather than recreating active video iframes or form inputs.
+
+| Endpoint | Contract |
+| --- | --- |
+| `GET /api/rig/status` | Refresh/read device observations; concurrent reads share work, successful snapshots cached for four seconds. |
+| `POST /api/rig/refresh` | Force fresh inventory/status read. |
+| `POST /api/rig/settings` | `{ids, settings:{iso,exposureMs,frameRate,awbMode}}`; validated, selected phones only, per-phone results. |
+| `POST /api/rig/sync` | `{ids}`; one successful CLI result required per selected host. |
+
+Rig writes require same-origin JSON plus `X-Rig-Request: 1`, reject oversized input, and serialize operations. Configuration/paths come from the server's trusted original backend. The original app's current job must be known and idle. There is no distributed lock across the two apps. Commands are not automatically retried after a timeout because the original action may have reached the phone.
+
+The participant display still relays **demo** capture state only:
 
 | Endpoint | Contract |
 | --- | --- |
@@ -40,6 +51,6 @@ Events have `{id, time, level, message, stage, cameraId, code, resolved, detail?
 
 Before deployment, add authentication, authenticated private-network transport, one active operator/operation lock, durable jobs/logs, and server restart recovery.
 
-## Intentional limits
+## Intentional limits in the UI demo
 
 Camera views are generated SVGs; color preview uses CSS filters; calibration profiles contain no measured matrices. Capture timestamps are generated, reconstruction is a timer, and the viewer is a point mannequin rather than Gaussian output. History holds 30 takes and 500 events in per-browser storage with finite quota. Exports contain summaries, not media or importable project backups. Popup policy and physical monitor positioning still require initial display setup. These limits are explicitly visible in the interface.

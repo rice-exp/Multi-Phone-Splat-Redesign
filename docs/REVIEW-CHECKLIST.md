@@ -19,3 +19,13 @@ Run `npm test` and `npm start`. Review in a desktop browser and at phone width; 
 - [ ] At mobile width, every action is reachable without horizontal page overflow.
 
 Physical wireless capture, phone timing, image quality, calibration accuracy and trained splat quality require separate validation after backend integration.
+
+
+## Live Prepare rig integration
+
+- Follow [Prepare rig setup and lab acceptance checks](PREPARE-RIG.md).
+- Default `/` has no generated cameras. The original prototype is at `/?demo=1`.
+- Automated checks cover UDP timeout/malformed replies, partial settings failure, readback mismatch, stale status, invalid sync reports, selections, and request guards.
+- Browser checks used a local fixture with one responding and one unavailable phone at desktop (1280 px) and phone (390 px) widths. Settings review, per-phone results, failure dialog, form persistence, preview embedding, and no horizontal overflow were checked.
+- The reviewed CloneCameraScope Python CLI successfully collected 30 clock samples from a loopback test endpoint through the new server API. This is a software integration check, not a physical clock-accuracy measurement.
+- Real phone settings, MediaMTX playback and wireless capture timing still need validation on the lab rig.

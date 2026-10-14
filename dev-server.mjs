@@ -2,6 +2,8 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {RigService,privateAddress} from './lib/rig-service.mjs';
+const rig=new RigService();
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
 const args=Object.fromEntries(process.argv.slice(2).map(a=>a.replace(/^--/,'').split('=')));
 const host=args.host||process.env.HOST||'127.0.0.1';
@@ -13,6 +15,22 @@ const broadcast=()=>{for(const res of clients)res.write(`data: ${JSON.stringify(
 const server=http.createServer(async(req,res)=>{
   try {
     const url=new URL(req.url,'http://localhost');
+    if(url.pathname.startsWith('/api/rig/')) {
+      const requestHost=new URL(`http://${req.headers.host}`).hostname;
+      if(requestHost!=='localhost'&&!privateAddress(requestHost))return json(res,403,{error:'Use localhost or the computer’s private IPv4 address.'});
+      if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{error:'Same-origin requests only'});
+      if(url.pathname==='/api/rig/status'&&req.method==='GET')return json(res,200,await rig.refresh());
+      if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});
+      if(req.headers['x-rig-request']!=='1'||!req.headers['content-type']?.startsWith('application/json'))return json(res,403,{error:'Use the Prepare rig controls.'});
+      let body='';
+      for await(const chunk of req){body+=chunk;if(body.length>8192)return json(res,413,{error:'Request too large'});}
+      const value=JSON.parse(body||'{}');
+      if(!value||typeof value!=='object'||Array.isArray(value))return json(res,400,{error:'Expected a JSON object.'});
+      if(url.pathname==='/api/rig/refresh')return json(res,200,await rig.refresh(true));
+      if(!['/api/rig/settings','/api/rig/sync'].includes(url.pathname))return json(res,404,{error:'Not found'});
+      try{return json(res,200,await rig.operate(url.pathname.split('/').at(-1),value.ids,value.settings));}
+      catch(error){return json(res,error.status||503,{error:error.message,code:error.code||'RIG_ERROR',next:error.next});}
+    }
     if(url.pathname==='/api/participant/events'&&req.method==='GET') {
       res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
       clients.add(res);res.write(`data: ${JSON.stringify(participant)}\n\n`);
@@ -42,7 +60,7 @@ const server=http.createServer(async(req,res)=>{
     res.end(req.method==='HEAD'?undefined:bytes);
   }catch(error){json(res,error.code==='ENOENT'?404:400,{error:error.code==='ENOENT'?'Not found':'Invalid request'});}
 });
-server.listen(port,host,()=>console.log(`Rice Experiential Pixels Lab UI: http://${host}:${port}\nParticipant display: http://${host}:${port}/participant.html\nSIMULATION ONLY — no camera or training commands are enabled.`));
+server.listen(port,host,()=>console.log(`Rice Experiential Pixels Lab: http://${host}:${port}\nPrepare rig backend: ${rig.backend}\nUI demo: http://${host}:${port}/?demo=1\nParticipant display (demo capture only): http://${host}:${port}/participant.html`));
 server.on('error',error=>{console.error(error.message);process.exitCode=1;});
 const close=()=>{for(const res of clients)res.end();server.close(()=>process.exit(0));};
 process.on('SIGINT',close);process.on('SIGTERM',close);

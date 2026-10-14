@@ -3620,3 +3620,36 @@ dialog::backdrop {
     min-width:20px;
   }
 }
+/* Real rig preparation: status updates preserve input and video elements. */
+.rig-live-label { color: var(--ink, #173b39); }
+.nav-step:disabled { opacity: .5; cursor: not-allowed; }
+.rig-fields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
+.rig-fields label { display: grid; gap: 8px; font-size: 13px; font-weight: 600; }
+.rig-fields input,.rig-fields select { width: 100%; min-width: 0; }
+.rig-settings-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 20px 0 10px; }
+.rig-settings-footer p,.rig-caption { color: #61716d; font-size: 13px; line-height: 1.65; }
+.rig-caption { margin-top: 12px; }
+.rig-empty { grid-column: 1 / -1; text-align: center; padding: 40px 20px; border: 1px dashed #bdcdc7; border-radius: 12px; background: #f8faf8; }
+.rig-empty>svg { margin: 0 auto 12px; color: #5c7971; }
+.rig-empty h3 { margin-bottom: 8px; }
+.rig-empty p { margin-bottom: 18px; color: #61716d; }
+.rig-camera-preview { background: #142c2b; position: relative; aspect-ratio: 16/10; }
+.rig-camera-preview iframe { display: block; width: 100%; height: 100%; border: 0; position: absolute; inset: 0; }
+.rig-preview-empty { height: 100%; min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #c4d4cd; font-size: 13px; }
+.rig-phone-checks { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 12px; }
+.rig-phone-checks .pill { font-size: 10px; }
+.rig-phone-status .pill { font-size: 10px; }
+.rig-phone-time { overflow-wrap: anywhere; }
+.rig-instructions { padding-left: 22px; line-height: 1.8; }
+.rig-instructions li { margin-bottom: 10px; }
+.rig-result-list { margin-top: 20px; padding: 16px; background: #f5f7f3; border-radius: 8px; font-size: 13px; line-height: 1.7; }
+.rig-result-list p { margin-top: 8px; }
+.rig-log-filter { display: grid; gap: 8px; margin: 16px 0; }
+.rig-log-event { border-top: 1px solid #dce3dd; padding: 16px 0; font-size: 13px; line-height: 1.7; }
+.rig-log-event small { display: block; color: #61716d; }
+.rig-log-event pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+.rig-log-event[hidden] { display: none; }
+@media(max-width:1000px) { .rig-fields { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:600px) { .rig-fields { grid-template-columns: 1fr 1fr; gap: 12px; } .rig-settings-footer { align-items: stretch; flex-direction: column; } .rig-phone-status { margin-top: 6px; } }
+
+.rig-phone-settings { margin: 0; padding: 0 14px 12px; color: #61716d; font-size: 11px; overflow-wrap: anywhere; }

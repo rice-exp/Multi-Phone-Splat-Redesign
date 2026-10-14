@@ -9,6 +9,8 @@ test('UI server serves modules and relays participant state without device comma
   const origin='http://127.0.0.1:14317';
   const html=await fetch(origin);assert.equal(html.status,200);assert.match(await html.text(),/Rice Experiential Pixels Lab/);
   const js=await fetch(`${origin}/js/app.js`);assert.match(js.headers.get('content-type'),/javascript/);
+  const rigWrite=await fetch(`${origin}/api/rig/settings`,{method:'POST',headers:{Origin:'http://external.example','Content-Type':'application/json','X-Rig-Request':'1'},body:'{}'});assert.equal(rigWrite.status,403);
+  const formWrite=await fetch(`${origin}/api/rig/sync`,{method:'POST',body:'{}'});assert.equal(formWrite.status,403);
   const invalid=await fetch(`${origin}/api/participant/state`,{method:'POST',body:JSON.stringify({phase:'pretend-recording'})});assert.equal(invalid.status,400);
   const external=await fetch(`${origin}/api/participant/state`,{method:'POST',headers:{Origin:'http://external.example'},body:JSON.stringify({phase:'done'})});assert.equal(external.status,403);
   const controller=new AbortController();t.after(()=>controller.abort());

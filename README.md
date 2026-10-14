@@ -1,10 +1,12 @@
 # Rice Experiential Pixels Lab — Multi-Phone-Splat Redesign
 
-A guided interface for a multi-phone 4D capture rig. This first version is a **working UI prototype**: select cameras, preview settings, walk through capture, recover a simulated transfer failure, review frames, and navigate a sample point scene.
+A guided interface for a multi-phone 4D capture rig. **Prepare rig now connects to CameraScope through the existing lab installation.** It reads the original app’s phone inventory, checks each phone over UDP, embeds available MediaMTX streams, applies selected camera settings, and checks clock offsets.
 
-**No phone commands, real camera streams, calibration solves, file transfers, or model training run in this version.** The three-stage participant display does work across devices through the local UI server. Illustrative views and results are labeled as simulations.
+The default page contains real connection controls. **Calibration, capture, transfers, reconstruction, and live participant capture status are not integrated yet.** The complete previous UI prototype is preserved separately at `/?demo=1`; its devices and results remain simulated.
 
-![Rice Experiential Pixels Lab camera setup](docs/screenshots/splat-studio-ui.jpg)
+For lab setup, supported commands, and the required hardware checks, read [Prepare rig setup](docs/PREPARE-RIG.md).
+
+![Prepare rig showing setup guidance when the lab backend is unavailable](docs/screenshots/prepare-rig.jpg)
 
 ## Run it on your computer
 
@@ -18,11 +20,13 @@ A guided interface for a multi-phone 4D capture rig. This first version is a **w
    npm start
    ```
 
-6. Open **http://127.0.0.1:4317**. Leave the terminal running. Press **Ctrl+C** in the terminal to stop the server.
+6. Open **http://127.0.0.1:4317**. On the lab computer, also run the original app on port **4173**. Without it, Prepare rig shows a connection/setup message rather than sample phones. Leave both terminals running. Press **Ctrl+C** to stop a server.
 
 There are no packages to install; `npm install` is unnecessary. `node dev-server.mjs` is equivalent to `npm start`. Do not open `index.html` directly: JavaScript modules and the participant relay need the server. Reload the browser after editing a file; this prototype has no build step or automatic reload.
 
 ## Try the complete workflow
+
+Open **http://127.0.0.1:4317/?demo=1** for this **simulation-only** workflow. Demo actions do not call the rig endpoints.
 
 1. **Prepare rig:** all eight sample cameras start selected. Camera 07 has an amber sync warning. Open its help popup or run **Check readiness**. Try selecting none, then all again.
 2. **Camera settings:** adjust exposure, ISO, white balance, and contrast. Compare current and draft views. **Discard** leaves saved values intact; **Apply** updates selected demo cameras and requires another readiness check. The preview approximates the look, not a phone sensor’s actual output.
@@ -34,7 +38,7 @@ There are no packages to install; `npm install` is unnecessary. `node dev-server
 
 **Activity log** provides severity/camera filters, search, explanations, raw details, resolved states, and JSON export. Scrolling up pauses following new events. **Take history** reopens completed takes; reconstruction results retain their inputs. Settings, up to 30 takes, results, and the last 500 events persist in this browser. They are not shared or backed up to GitHub. **Export session summary** saves a JSON copy, not a media archive.
 
-## Participant display and private-network preview
+## Participant display in the UI demo
 
 The display keeps **Preparing → In progress → Done** visible together, with only the current stage illuminated. It shows the countdown, reconnects automatically, and warns if active operator status becomes stale.
 
@@ -48,7 +52,7 @@ The display keeps **Preparing → In progress → Done** visible together, with 
 - Find the computer’s local IPv4 address in network settings. Open `http://COMPUTER-LAN-IP:4317/participant.html` on the display once. Substitute the actual address (often starting `192.168.`); `127.0.0.1` and `0.0.0.0` are not addresses to use from another device. A host firewall may require allowing Node on the private network.
 - Keep the display page open; it follows later takes automatically. Browsers cannot silently position a window on another physical monitor. Display placement/kiosk setup is a one-time deployment step.
 
-Use one operator browser at a time. The development relay has no authentication, operator locking, or TLS; keep it on a trusted private network, not the internet. Phone discovery, wireless commands, and image transfer are future integration work. Charging cables are independent.
+Use one operator browser at a time. The development server has no authentication or TLS; keep it on a trusted private network, not the internet. Prepare rig sends real wireless commands, with an operation lock inside this server. It cannot lock commands issued by the original app; use one app for rig changes at a time. Image transfer remains future integration work. Charging cables are independent.
 
 ## How three teammates can work independently
 
@@ -68,6 +72,10 @@ Suggested ownership: one person handles setup/calibration, one handles capture/e
 
 | File | Purpose |
 | --- | --- |
+| `lib/rig-service.mjs` | Original backend adapter, CameraScope UDP checks, selected settings and CLI clock offset checks |
+| `public/js/rig-app.js` | Real Prepare rig interface, status polling, previews, settings review and error dialogs |
+| `public/js/rig-model.js` | Status expiry, selection and white balance comparison |
+| `public/js/entry.js` | Separates the default real interface from the explicit UI demo |
 | `public/js/views.js` | Guided pages, camera cards, settings and error dialogs |
 | `public/styles.css` | Shared design, responsive layout, participant display |
 | `public/js/model.js` | State, selection, readiness guards, take snapshots and recovery |
@@ -76,7 +84,7 @@ Suggested ownership: one person handles setup/calibration, one handles capture/e
 | `public/js/viewer.js` | Sample point scene and keyboard/mouse/touch navigation |
 | `public/js/participant.js` | Three-stage screen and reconnect/stale handling |
 | `public/js/capture-metrics.js` | Timing/count calculations ported from the original project |
-| `dev-server.mjs` | Static server and UI-only participant relay |
+| `dev-server.mjs` | Static server, rig API and simulation-only participant relay |
 | `test/` | State, timing, and relay tests using Node’s built-in test runner |
 
 Run **`npm test`** before opening a pull request. GitHub Actions runs the same checks. No camera or GPU is required.
@@ -85,4 +93,4 @@ Run **`npm test`** before opening a pull request. GitHub Actions runs the same c
 
 This redesign follows [rice-exp-lab/Multi-Phone-Splat](https://github.com/rice-exp-lab/Multi-Phone-Splat). The reviewed local source was commit `85ad82f41d2dcfd2187cd974993c6737b99aaf49` on `codex/calibration-splat-cleanup`, ahead of that repository’s saved `main`. The revision deployed on the physical rig remains unconfirmed.
 
-Pure calculations from `lib/camerascope-capture.js` were ported: saved/dropped counts, intervals accounting for missing sequence indices, and cross-camera timing from `actualLeaderNs`. Hardware/server code has not been connected to an active execution path. Verify the deployed revision and endpoint contracts before integrating it.
+Pure calculations from `lib/camerascope-capture.js` were ported: saved/dropped counts, intervals accounting for missing sequence indices, and cross-camera timing from `actualLeaderNs`. Prepare rig uses its existing API/CLI conventions and the exact UDP state/settings contract verified in [CloneCameraScope](https://github.com/rice-exp/CloneCameraScope) at `1c17f73`. Verify the deployed revision and run the [lab acceptance checks](docs/PREPARE-RIG.md#lab-acceptance-checks) before relying on this integration for a session.
