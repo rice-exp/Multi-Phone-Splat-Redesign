@@ -2,20 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import dgram from 'node:dgram';
 import {once} from 'node:events';
-import {RigService,sendCommand,validateBackend,validateSettings,parseCliJson,settingsMatch} from '../lib/rig-service.mjs';
+import {RigService,sendCommand,privateAddress,validateSettings,parseCliJson,settingsMatch} from '../lib/rig-service.mjs';
 import {observedPhones,selectionFor,colorStatus,configurationStatus} from '../public/js/rig-model.js';
 
 const settings={iso:200,exposureMs:8,frameRate:30,awbMode:'DAYLIGHT'};
 const summary={count:30,selectedOffsetNs:10000,selectedErrorBoundNs:20000};
 function fixture(overrides={}) {
   let clock=100000, fail=false, running=false, configFail=false, syncReport, commands=[], executions=[];
-  const states=new Map(['192.168.50.101','192.168.50.102'].map(ip=>[ip,{iso:100,exposureMs:8,frameDurationMs:1000/30,autoExposureEnabled:false,isCapturing:true,colorProcessing:{awbMode:'OFF',awbLock:false}}]));
+  const states=new Map(['192.168.50.101','192.168.50.102'].map((ip,i)=>[ip,{iso:100,exposureMs:8,frameDurationMs:1000/30,autoExposureEnabled:false,isCapturing:true,streamEnabled:true,udpHost:'192.168.50.10',udpVideoPort:5004+i*2,udpMetadataPort:6004+i*2,colorProcessing:{awbMode:'OFF',awbLock:false}}]));
   const config={phones:[{id:'cam-1',name:'Front',ip:'192.168.50.101'},{id:'cam-2',name:'Rear',ip:'192.168.50.102'}], pcIp:'192.168.50.10', cameraScopeRoot:'/lab/CameraScope', pythonExecutable:'python',iso:100,exposureMs:8,frameRate:30,colorProcessing:{awbMode:'OFF',awbLock:false}};
-  const service=new RigService({now:()=>clock,request:async url=>{
-    if(configFail)throw Error('connection refused');
-    const data=url.endsWith('/config')?config:url.endsWith('/job')?{state:running?'running':'idle'}:{running:true,routes:config.phones.map((phone,i)=>({name:`cam-${i+1}`,ip:phone.ip,videoPort:5004+i*2,metadataPort:6004+i*2,ready:i===0}))};
-    return {ok:true,json:async()=>data};
-  },command:async(ip,payload)=>{commands.push({ip,payload});if(fail&&ip.endsWith('102'))throw Object.assign(Error('Timed out'),{code:'PHONE_TIMEOUT'});if(payload.cmd==='set'){const {cmd,capture,...patch}=payload;Object.assign(states.get(ip),patch);if(typeof capture==='boolean')states.get(ip).isCapturing=capture;}return {ok:true,state:{...states.get(ip)}};},run:async(exe,args)=>{executions.push({exe,args});return {stdout:JSON.stringify(args.includes('sync-many')?(syncReport||{results:[{host:'192.168.50.101',ok:true,summary},{host:'192.168.50.102',ok:true,summary}]}):{ok:true})};},...overrides});
+  const service=new RigService({now:()=>clock,configStore:{read:async()=>{if(configFail)throw Object.assign(Error('Local config unreadable'),{code:'CONFIG_UNAVAILABLE'});return config;}},
+    gateway:{state:async()=>({running:true,routes:config.phones.map((phone,i)=>({name:`cam-${i+1}`,ip:phone.ip,videoPort:5004+i*2,metadataPort:6004+i*2,ready:i===0}))})},
+    workflow:async()=>({state:running?'running':'idle'}),
+    command:async(ip,payload)=>{commands.push({ip,payload});if(fail&&ip.endsWith('102'))throw Object.assign(Error('Timed out'),{code:'PHONE_TIMEOUT'});if(payload.cmd==='set'){const {cmd,capture,...patch}=payload;Object.assign(states.get(ip),patch);if(typeof capture==='boolean')states.get(ip).isCapturing=capture;}return {ok:true,state:{...states.get(ip)}};},run:async(exe,args)=>{executions.push({exe,args});return {stdout:JSON.stringify(args.includes('sync-many')?(syncReport||{results:[{host:'192.168.50.101',ok:true,summary},{host:'192.168.50.102',ok:true,summary}]}):{ok:true})};},...overrides});
   return {service,config,states,commands,executions,advance:n=>clock+=n,offline:()=>fail=true,backendOffline:()=>configFail=true,running:()=>running=true,report:value=>syncReport=value};
 }
 
@@ -25,7 +24,7 @@ test('wireless preview start uses only selected routes and preserves camera sett
   assert.equal(result.ok,true);assert.equal(f.executions.length,0);
   assert.deepEqual(f.commands.filter(c=>c.payload.cmd==='set'),[{ip:'192.168.50.102',payload:{cmd:'set',udpHost:'192.168.50.10',udpVideoPort:5006,udpMetadataPort:6006,streamEnabled:true,capture:true}}]);
   assert.equal(f.states.get('192.168.50.102').iso,100);
-  assert.equal(f.states.get('192.168.50.101').streamEnabled,undefined);
+  assert.equal(f.states.get('192.168.50.101').streamEnabled,true);
   assert.equal(f.config.iso,100);
 });
 
@@ -50,7 +49,7 @@ test('preview mutations reject workflow, recording, destination and missing gate
   const g=fixture();g.states.get('192.168.50.101').isH264Recording=true;
   await assert.rejects(()=>g.service.operate('preview-stop',['cam-1']),{code:'PHONE_RECORDING'});
   const h=fixture();h.config.pcIp='127.0.0.1';await assert.rejects(()=>h.service.operate('preview-start',['cam-1']),{code:'DESTINATION_INVALID'});
-  const missing=fixture({request:async url=>({ok:true,json:async()=>url.endsWith('/config')?f.config:url.endsWith('/job')?{state:'idle'}:{running:true,routes:[]}})});
+  const missing=fixture({gateway:{state:async()=>({running:true,routes:[]})}});
   await assert.rejects(()=>missing.service.operate('preview-start',['cam-1']),{code:'PREVIEW_ROUTE_MISSING'});
   for(const current of [f,g,h,missing])assert.equal(current.commands.filter(c=>c.payload.cmd==='set').length,0);
 });
@@ -67,12 +66,17 @@ test('real inventory and response/gateway status replace demo devices',async()=>
   assert.equal(status.phones[0].battery,undefined);assert.equal(status.phones[0].settings,null);
   assert.equal(f.executions.length,0);assert.ok(f.commands.every(command=>command.payload.cmd==='getState'));
 });
-test('stale and disconnected backends cannot retain green device state',async()=>{
+
+test('incoming video on an old route cannot be attributed to a reconfigured phone',async()=>{
+  const f=fixture();f.states.get('192.168.50.101').udpVideoPort=5006;
+  const status=await f.service.refresh();assert.equal(status.phones[0].responding,true);assert.equal(status.phones[0].previewReady,false);assert.equal(status.phones[0].previewConfigured,false);
+});
+test('stale observations and unreadable local configuration cannot retain green device state',async()=>{
   const f=fixture();await f.service.refresh();f.advance(21000);
   assert.equal(f.service.status().connected,false);assert.equal(f.service.status().phones[0].responding,false);
   f.backendOffline();const status=await f.service.refresh(true);
   assert.equal(status.phones.length,2);assert.equal(status.phones[0].previewReady,false);assert.equal(status.phones[0].state,null);
-  assert.equal(status.error.code,'BACKEND_UNAVAILABLE');
+  assert.equal(status.error.code,'CONFIG_UNAVAILABLE');
 });
 test('settings execute only selected phones and require color readback',async()=>{
   const f=fixture();const result=await f.service.operate('settings',['cam-2'],settings);
@@ -112,14 +116,14 @@ test('CameraScope requested settings must match all values and manual exposure',
   assert.equal(settingsMatch({},settings),false);
   assert.equal(configurationStatus({responding:false,state},settings).tone,'warning');
 });
-test('running original workflows, concurrent operations and invalid selections are blocked',async()=>{
+test('running workflows, concurrent operations and invalid selections are blocked',async()=>{
   const f=fixture();f.running();await assert.rejects(()=>f.service.operate('sync',['cam-1']),/workflow/i);assert.equal(f.executions.length,0);
   const g=fixture();g.service.busy='sync';await assert.rejects(()=>g.service.operate('settings',['cam-1'],settings),/already running/);
   g.service.busy=null;await assert.rejects(()=>g.service.operate('sync',['unknown']),/configured phones/);assert.equal(g.executions.length,0);
 });
-test('invalid inventory, settings and public backend addresses fail closed',async()=>{
+test('invalid inventory, settings and public phone addresses fail closed',async()=>{
   const f=fixture();f.config.phones[1].ip=f.config.phones[0].ip;assert.equal((await f.service.refresh()).error.code,'CONFIG_INVALID');
-  assert.throws(()=>validateBackend('https://example.org'));assert.throws(()=>validateBackend('http://8.8.8.8'));assert.throws(()=>validateBackend('http://user:pass@127.0.0.1'));
+  assert.equal(privateAddress('8.8.8.8'),false);assert.equal(privateAddress('example.org'),false);assert.equal(privateAddress('192.168.50.10'),true);
   assert.throws(()=>validateSettings({...settings,exposureMs:100}));assert.throws(()=>validateSettings({...settings,iso:'200'}));assert.throws(()=>validateSettings({...settings,command:'capture'}));
 });
 test('CLI log prefixes are accepted, malformed output is rejected',()=>{

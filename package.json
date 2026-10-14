@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "CameraScope rig preparation with a separate guided capture UI demo",
-  "scripts": { "start": "node dev-server.mjs", "dev": "node dev-server.mjs", "test": "node --test" },
+  "description": "Standalone CameraScope rig configuration and wireless live views",
+  "scripts": { "start": "node dev-server.mjs", "dev": "node dev-server.mjs", "test": "node --test", "import-config": "node scripts/import-config.mjs" },
   "engines": { "node": ">=20" }
 }

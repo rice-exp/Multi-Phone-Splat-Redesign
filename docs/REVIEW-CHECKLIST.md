@@ -1,6 +1,6 @@
 # UI review route
 
-Run `npm test` and `npm start`. Review in a desktop browser and at phone width; use real touch hardware to check pinch gestures. All data are simulated.
+Run `npm test` and `npm start`. Review the simulation at `/?demo=1` in a desktop browser and at phone width; use real touch hardware to check pinch gestures. The checklist below describes that simulation; the default page connects to real configured devices.
 
 - [ ] Eight cameras start selected. Deselect all blocks Continue/capture; Select all restores the set.
 - [ ] Camera 07 starts amber. Help explains the issue, impact, next action and raw details. A readiness check resolves selected issues.
@@ -24,8 +24,8 @@ Physical wireless capture, phone timing, image quality, calibration accuracy and
 ## Live Prepare rig integration
 
 - Follow [Prepare rig setup and lab acceptance checks](PREPARE-RIG.md).
-- Default `/` has no generated cameras. The original prototype is at `/?demo=1`.
-- Automated checks cover UDP timeout/malformed replies, partial settings failure, readback mismatch, stale status, invalid sync reports, selections, and request guards.
-- Browser checks used a local fixture with one responding and one unavailable phone at desktop (1280 px) and phone (390 px) widths. Settings review, per-phone results, failure dialog, form persistence, preview embedding, and no horizontal overflow were checked.
-- The reviewed CloneCameraScope Python CLI successfully collected 30 clock samples from a loopback test endpoint through the new server API. This is a software integration check, not a physical clock-accuracy measurement.
-- Real phone settings, MediaMTX playback and wireless capture timing still need validation on the lab rig.
+- Default `/` reads the local inventory and never invents phone responses or video. The original prototype is at `/?demo=1`.
+- Automated checks cover persistent configuration/import, invalid edits, port conflicts, owned gateway lifecycle, UDP replies, partial failures, readback, route identity, stale status, sync reports, selections and request guards.
+- Standalone browser QA used two mock UDP phones and the bundled real MediaMTX runtime with no old HTTP backend. Verify Connection setup saves defaults and names, and Start/Stop gateway controls affect only the owned process.
+- Confirm configuration persists after restart, invalid edits preserve the last file, and route changes do not mislabel old incoming video.
+- Earlier player QA decoded synthetic H.264 video. Physical phone settings, MediaMTX playback, clock accuracy and wireless capture timing still need lab validation.

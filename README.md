@@ -1,12 +1,12 @@
 # Rice Experiential Pixels Lab — Multi-Phone-Splat Redesign
 
-A guided interface for a multi-phone 4D capture rig. **Prepare rig connects to CameraScope through the existing lab installation.** It reads the original app’s phone inventory, checks each phone over UDP, starts/stops wireless streams for selected phones, displays live H.264 video through MediaMTX WebRTC, applies selected camera settings, and checks clock offsets. The Android app and original webapp require no code changes.
+A guided interface for a multi-phone 4D capture rig. **Prepare rig now runs independently of the old webapp.** It owns persistent CameraScope configuration and the bundled MediaMTX gateway, checks each phone over UDP, starts/stops selected wireless streams, displays live H.264 video, applies selected settings, and checks clock offsets using the independent CameraScope CLI. The Android app is unchanged.
 
 The default page contains real connection controls. **Calibration, capture, transfers, reconstruction, and live participant capture status are not integrated yet.** The complete previous UI prototype is preserved separately at `/?demo=1`; its devices and results remain simulated.
 
 For lab setup, supported commands, and the required hardware checks, read [Prepare rig setup](docs/PREPARE-RIG.md).
 
-![Prepare rig showing setup guidance when the lab backend is unavailable](docs/screenshots/prepare-rig.jpg)
+![Standalone connection setup with mock phones and the real local gateway](docs/screenshots/standalone-setup-qa.jpg)
 
 ## Run it on your computer
 
@@ -20,7 +20,9 @@ For lab setup, supported commands, and the required hardware checks, read [Prepa
    npm start
    ```
 
-6. Open **http://127.0.0.1:4317**. On the lab computer, also run the original app on port **4173**, with its existing MediaMTX runtime installed. Confirm its PC destination IP, keep CameraScope open on the phones, select cameras here, and click **Start selected previews**. Without the original server, Prepare rig shows a connection/setup message rather than sample phones. Leave both terminals running. Press **Ctrl+C** to stop a server.
+6. Open **http://127.0.0.1:4317**. In **Connection setup**, verify phone IPs and the computer destination IP. The bundled Windows MediaMTX gateway starts automatically; the old webapp/server should be stopped. Keep CameraScope open on the phones, select cameras here, and click **Start selected previews**. Leave this terminal running. Press **Ctrl+C** to stop the server and its gateway.
+
+The local configuration is saved in `.camerascope/rig-config.json` and excluded from Git. To preserve an old lab installation, run `npm run import-config -- "PATH-TO-OLD/.camerascope/webapp-config.json"` before first startup. If a local configuration already exists, back it up and add `--replace`. The migration copies the old file once and never contacts the old server. See [standalone setup](docs/PREPARE-RIG.md) for clock CLI paths, other platforms and port-conflict recovery.
 
 Each camera card distinguishes phone response, gateway availability, and browser playback. **Live** appears only after displayed frames advance; stalled video loses the green label and reconnects automatically. **Retry** reconnects the browser without sending a phone command. **Enlarge** expands the view. **Stop selected streams** disables wireless video without stopping the phone’s camera pipeline. Stream changes can restart that pipeline; finish takes/recordings first. Preview controls use UDP only and need no USB/ADB or Python.
 
@@ -54,7 +56,7 @@ The display keeps **Preparing → In progress → Done** visible together, with 
 - Find the computer’s local IPv4 address in network settings. Open `http://COMPUTER-LAN-IP:4317/participant.html` on the display once. Substitute the actual address (often starting `192.168.`); `127.0.0.1` and `0.0.0.0` are not addresses to use from another device. A host firewall may require allowing Node on the private network.
 - Keep the display page open; it follows later takes automatically. Browsers cannot silently position a window on another physical monitor. Display placement/kiosk setup is a one-time deployment step.
 
-Use one operator browser at a time. The development server has no authentication or TLS; keep it on a trusted private network, not the internet. Prepare rig sends real wireless commands, with an operation lock inside this server. It cannot lock commands issued by the original app; use one app for rig changes at a time. Image transfer remains future integration work. Charging cables are independent.
+Use one operator browser at a time. The development server has no authentication or TLS; keep it on a trusted private network, not the internet. Prepare rig sends real wireless commands, with an operation lock inside this server. Keep the old gateway stopped because its ports overlap; commands from other controllers cannot be locked here. Image transfer remains future integration work. Charging cables are independent.
 
 ## How three teammates can work independently
 
@@ -74,7 +76,11 @@ Suggested ownership: one person handles setup/calibration, one handles capture/e
 
 | File | Purpose |
 | --- | --- |
-| `lib/rig-service.mjs` | Original backend adapter, CameraScope UDP checks, selected settings and CLI clock offset checks |
+| `lib/rig-service.mjs` | Standalone CameraScope UDP checks, selected settings/streams and CLI clock checks |
+| `lib/rig-config.mjs` | Validated, persistent local phone inventory and CameraScope configuration |
+| `lib/gateway.mjs` | Owned MediaMTX process, generated RTP routes, readiness and port-conflict checks |
+| `scripts/import-config.mjs` | One-time migration of the old saved configuration |
+| `tools/mediamtx/` | Existing Windows MediaMTX runtime, license and provenance |
 | `public/js/rig-app.js` | Real Prepare rig interface, status polling, previews, settings review and error dialogs |
 | `public/js/live-preview.js` | Receive-only WHEP player, decoded-frame status, reconnect and session cleanup |
 | `public/js/rig-model.js` | Status expiry, selection and white balance comparison |

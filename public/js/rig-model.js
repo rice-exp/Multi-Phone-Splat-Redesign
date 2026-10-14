@@ -9,7 +9,7 @@ export function observedPhones(status, now = Date.now()) {
 }
 export function selectionFor(phones, previous = {}) {
   // Persist only selection; never restore device status from browser storage.
-  return Object.fromEntries(phones.map(phone => [phone.id, previous[phone.id] !== false]));
+  return Object.fromEntries(phones.map(phone => [phone.id, typeof previous[phone.id]==='boolean'?previous[phone.id]:phone.enabled!==false]));
 }
 export function colorStatus(phone, requested) {
   const actual = phone.responding ? phone.state?.colorProcessing?.awbMode : null;

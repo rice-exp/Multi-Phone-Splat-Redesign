@@ -2,7 +2,7 @@ name: UI checks
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, Camerascope-features]
 jobs:
   test:
     runs-on: ubuntu-latest

@@ -1,89 +1,155 @@
-# Prepare rig: first hardware integration
+# Standalone CameraScope rig setup
 
-## Run on the existing lab computer
+The redesign owns the phone configuration, UDP commands and MediaMTX gateway.
+**The old Multi-Phone-Splat webapp/server does not need to run.** CameraScope's
+Android code and features are unchanged.
 
-1. In GitHub Desktop, pull the redesign branch and open its folder in a terminal.
-2. In a **second terminal**, start the existing Multi-Phone-Splat app using its usual lab startup process. Its default address is `http://127.0.0.1:4173`. Keep it running.
-3. In the original app, confirm the phone IP addresses, `cameraScopeRoot`, `pythonExecutable`, and PC destination IP. Keep CameraScope open on every phone. Use the existing private network.
-4. Confirm the original server's MediaMTX gateway is running. That server starts the gateway at startup when its existing `tools/mediamtx/mediamtx.exe` runtime is installed. Its own Start gateway button also configures the entire phone fleet; use the redesign's selected-preview controls for phone commands.
-5. In the redesign terminal run `npm start`. Open `http://127.0.0.1:4317/`.
-6. Compare the inventory with the rig. Refresh status, select phones, then click **Start selected previews** and review the destination and selected names. Live frames appear in the camera cards. Review/apply settings and check clock offsets. Open **Details** on a phone or the activity log for recovery instructions and raw responses.
+## Start the redesign
 
-No package installation is needed for the redesign. The lab computer still needs the original CameraScope Python environment and MediaMTX installation. Both servers and the CLI must run on the **same computer**, because the adapter uses the original configuration’s filesystem paths.
+1. Check out `Camerascope-features` and install Node.js 20 or newer.
+2. Stop the old webapp and its gateway so their ports are free.
+3. Run `npm start` in the redesign folder. No npm packages need installing.
+4. Open `http://127.0.0.1:4317/`, then **Connection setup**.
+5. Verify the phone IDs/names/IPs, selected-by-default flags, computer destination
+   IPv4 address, and saved camera defaults. Save configuration.
+6. Put the computer and phones on the same private Wi-Fi/LAN. Keep CameraScope
+   open with its UDP command server enabled on port 5010.
+7. The gateway starts automatically. If stopped or unavailable, use **Start
+   gateway** in Connection setup. Inspect its status/logs there.
+8. Select the intended phones, click **Start selected previews**, and review the
+   destination. A stopped phone camera pipeline will be started. Wait for each
+   card's **Live** label, which confirms displayed video frames.
 
-If the original server uses a different port, set it before starting the redesign. Windows PowerShell:
+The initial configuration copies the old project's eight lab phone identities,
+`192.168.50.101`–`.108`, and destination `192.168.50.10`. These are configured
+addresses, not discovered or simulated devices; change them to match your rig.
+Only valid UDP replies count as responding phones.
+
+The Windows MediaMTX **v1.18.2** runtime and MIT license are included under
+`tools/mediamtx/`. On Linux/macOS, install the corresponding runtime and set
+`MEDIAMTX_EXECUTABLE` to its local path. See [runtime provenance](../tools/mediamtx/README.md).
+
+![Standalone configuration editor with mock UDP phones and the real local MediaMTX gateway](screenshots/standalone-setup-qa.jpg)
+
+## Import an existing lab configuration once
+
+The repository does not contain the lab computer's ignored saved configuration.
+If you have one, stop the redesign and run this **before its first startup**:
 
 ```powershell
-$env:RIG_BACKEND_URL = "http://127.0.0.1:4173"
+npm run import-config -- "C:\path\to\Multi-Phone-Splat\.camerascope\webapp-config.json"
+```
+
+The importer copies phone IDs, serials, names, IPs, enabled flags, PC destination,
+camera defaults, CLI installation paths and saved capture options. It validates
+the result and leaves the old file untouched. To replace a local configuration
+that has already been created, back up `.camerascope/rig-config.json`, then add
+`--replace` to the command. Start the redesign afterward. This is a one-time
+file migration; no old HTTP server is contacted.
+
+## Saved configuration and clock CLI
+
+Configuration persists in `.camerascope/rig-config.json`, excluded from Git.
+Saving through Connection setup does not send commands to phones. Changing
+phone routes restarts a running gateway; start selected previews again to update
+their destinations. Invalid input leaves the saved file unchanged. A corrupt
+file produces an explicit error instead of silently resetting the inventory.
+
+Connection setup edits phone inventory, PC destination and saved ISO/exposure/
+frame-rate/white-balance defaults. Applying settings in Prepare rig changes only
+selected phones, with independent state readback; it does not overwrite saved
+defaults. Edit those defaults in Connection setup when you want them retained.
+Existing browser selection preferences take precedence over selected-by-default
+flags; new cameras use the saved flag.
+
+Clock checks need the **CameraScope Python CLI**, independently of the old
+webapp. Set `cameraScopeRoot` to the directory containing `scripts/camerascope_cli.py`
+and `pythonExecutable` to your Python installation in the local configuration.
+The supplied CloneCameraScope repository nests this directory at
+`CameraScope-main/CameraScope-main`. Alternatively use server environment settings:
+
+```powershell
+$env:CAMERASCOPE_ROOT = "C:\path\to\CloneCameraScope\CameraScope-main\CameraScope-main"
+$env:CAMERASCOPE_PYTHON = "python"
 npm start
 ```
 
-macOS/Linux:
+Preview/status/settings commands use UDP directly and need neither Python nor
+ADB. Executable paths are configured locally, not through browser inputs.
 
-```sh
-RIG_BACKEND_URL=http://127.0.0.1:4173 npm start
-```
+Optional server settings: `RIG_CONFIG_PATH` overrides the configuration file;
+`MEDIAMTX_EXECUTABLE` overrides the gateway runtime; `RIG_GATEWAY_AUTOSTART=0`
+disables automatic gateway startup. `RIG_BACKEND_URL` is no longer used.
 
-For a second operator device on the private LAN, start the redesign with `npm start -- --host=0.0.0.0` and browse to `http://LAB-COMPUTER-IP:4317/`. Preview frames use the same computer’s hostname on port 8889. MediaMTX WebRTC also requires port 8189 and the original per-camera UDP video ports. Keep the server on a trusted private LAN; it has no login system. Only one operator should control the rig.
+## Wireless ports and gateway ownership
 
-## What is connected
-
-| Control or indication | Evidence / action |
+| Purpose | Port |
 | --- | --- |
-| Phone inventory | Original server `GET /api/config`; no invented phones or automatic network discovery |
-| Responding | Valid CameraScope `getState` response over UDP 5010, including a state object |
-| Start selected previews | UDP `set` with `udpHost`, route-specific `udpVideoPort`/`udpMetadataPort`, `streamEnabled:true`; add `capture:true` only for a stopped pipeline. Independent state readback must match. |
-| Stop selected streams | UDP `set` with `streamEnabled:false`; never sends `capture:false`. Independent readback must confirm disabled streaming. |
-| Gateway available | Original server `GET /api/gateway` reports the matching route/IP ready. This is separate from browser playback. |
-| Live video | Receive-only WebRTC/WHEP player reports Live only while displayed frames advance; stalls warn and reconnect. Retry affects only this browser; Enlarge expands the card. |
-| ISO / exposure / frame rate | UDP `set` with `autoExposureEnabled:false`; requires acknowledgement and matching `getState` readback |
-| White balance mode | Included in UDP `set.colorProcessing`, followed by independent `getState` readback; compares the reported mode |
-| Clock offset check | CameraScope CLI `sync-many --hosts … --count 30 --jobs … --no-save`; requires one successful result per selected IP |
-| Errors | Server session log, affected phone, raw response/command report, and next checks |
+| CameraScope command listener on each phone | UDP 5010 |
+| Phone H.264/RTP video to computer | UDP 5004, 5006, …, one route per inventory position |
+| Phone metadata to computer | UDP 6004, 6006, … |
+| MediaMTX browser/WHEP signaling | TCP 8889 |
+| WebRTC ICE video transport | TCP/UDP 8189 |
+| MediaMTX control API, loopback only | TCP 9997 |
 
-Status is polled every five seconds. Readings older than 20 seconds are treated as stale. Clock checks expire after 60 seconds, and are cleared on disconnect, setting changes or stream changes. Phone identity and selection persist independently of observations. All new phones start selected; select-all/deselect-all and individual selections affect settings, clocks and stream commands. The server rejects empty, duplicate and unknown selections.
+The server generates `.camerascope/mediamtx.generated.yml` from its own inventory
+and manages its own gateway child process. Start/stop controls never send phone
+commands or adopt/terminate an old gateway. Occupied ports produce a conflict
+message. Server shutdown stops its owned gateway. Stop selected streams disables
+phone video output while retaining the phone camera pipeline.
 
-Stream controls reuse CameraScope's existing Android functionality. They do not edit its code, camera selection, exposure/color settings or the original app's saved configuration. Toggling a stream or its destination can restart the CameraScope pipeline; finish any take/recording first. The adapter refuses mutations while the original workflow is running/unknown or a selected phone reports H.264 recording. Stop disables video output while retaining the camera pipeline. A successful start readback confirms requested streaming state, while actual browser frames have a separate Live indicator. Preview commands need no Python or ADB.
+For an operator on another private-LAN device, use
+`npm start -- --host=0.0.0.0` and browse to `http://LAB-COMPUTER-IP:4317/`.
+Video uses the same reachable computer hostname on port 8889. Allow the listed
+ports on the private-network firewall. Use one operator on a trusted private
+network; the development server has no login or TLS. Do not run commands from
+another controller concurrently. There is no distributed lock with the old app.
 
-Applying settings changes the phones; it **does not edit the original app’s saved capture configuration**. That app may reapply its own configuration on the next capture. Reconcile settings there before capturing. The supported ranges are input bounds, not a guarantee that every phone supports them; rejected/clamped values require inspection in CameraScope.
+## Status and limits
 
-The review dialog shows the requested values before submission. It does not simulate a photographic change. Live previews continue showing actual output. A true before/after image trial and restore needs verified CameraScope state/capture contracts and is not implemented here.
+- Phone observations poll every five seconds and expire after 20 seconds.
+  Gateway readiness, phone response, matching stream destination and actual
+  browser frame progress are separate observations. A stale or mismatched phone
+  route cannot display a supposedly identified live camera.
+- **Live** requires displayed frames to advance. Stalls lose the green label and
+  reconnect. **Retry** reconnects only the browser; **Enlarge** expands the card.
+  The player is receive-only and needs no camera/microphone permission or public
+  STUN service. WHEP sessions and peers are released on retry, disconnect and exit.
+- Toggling streams/destinations can restart CameraScope's pipeline. Finish takes
+  and recordings first. Selected phones reporting H.264 recording reject settings
+  and stream mutations. Commands require acknowledgements and matching state;
+  timeouts are not automatically retried because a command may have arrived.
+- Clock checks use `sync-many --no-save`; offsets expire after 60 seconds and are
+  cleared on disconnect, configuration changes, setting changes and stream changes.
+  They do not set phone clocks or establish sensor phase/capture readiness.
+- Manual settings readback verifies requested CameraScope state, not measured
+  sensor exposure/color/timing. Phone-supported limits still need lab verification.
+- Calibration, capture, transfer, reconstruction and participant capture status
+  remain integration work. The complete UI simulation remains at `/?demo=1`.
 
-## Observations that are deliberately not inferred
+## Verification and lab acceptance
 
-- The running count uses CameraScope’s `isCapturing`, which means its camera pipeline is active, not that a research take is recording. A valid response alone does not count as running.
-- Battery level and Wi-Fi strength are omitted; the available source does not establish those fields.
-- Settings readback compares `iso`, `exposureMs`, `frameDurationMs`, `autoExposureEnabled` and `colorProcessing.awbMode`. These are **requested CameraScope state**, not measured sensor exposure, frame timing or image color. Manual settings explicitly disable auto exposure and clear the white balance lock; both states are checked in readback.
-- A ready gateway route does not prove that the operator’s browser decoded a frame. The separate Live label requires displayed frame progress; negotiation errors, stalls and reconnects appear on the affected card. The view is receive-only and never requests camera/microphone access. There are no public STUN dependencies; the browser and gateway must be reachable on the lab LAN.
-- The clock check measures offsets; it does not change phone clocks or persist the original capture cache (`--no-save`). It is not sensor phase alignment or capture readiness. Fresh offsets must be measured and used by the eventual capture preflight.
-- Calibration, capture, transfer, reconstruction, and the live participant cue are disabled in the real interface. The previous design remains at `/?demo=1`, where all those operations are simulated.
-- Operation locks are local to this redesign process. It checks the original `/api/job` status before mutations, but cannot prevent another operator from starting work in the original app afterward. Do not issue commands concurrently from both apps.
-- Events and command acknowledgements are held in server memory and reset on restart. Reloading a browser does not restore a green status from local storage.
+Automated checks cover persistent configuration, one-time import, invalid input,
+gateway lifecycle/port conflicts, selected UDP commands, readback and WHEP/frame
+state. The bundled MediaMTX runtime was also started/stopped locally and queried
+through its real API. Browser QA used mock UDP phones without any old HTTP server.
+Earlier browser checks decoded synthetic H.264 through the player. Physical
+phones and the deployed wireless network still need these checks:
 
-## Source and compatibility
+1. Keep the old server stopped. Import/verify configuration and start only the redesign.
+2. Start previews for one selected phone. Confirm its identity and image, while
+   deselected phones remain unchanged. Retry and enlarge the view.
+3. Disconnect a phone or close CameraScope. Its response/live state must expire;
+   restore it and verify recovery.
+4. Apply a small supported setting change to one phone and inspect physical state
+   and image. Verify readback and partial-failure handling.
+5. Check clock results using the independently installed CLI; inspect per-phone reports.
+6. Stop/restart the gateway. Confirm streams disappear/recover, then stop a selected
+   phone stream and verify its camera pipeline stays active.
+7. Save configuration, restart the redesign and confirm persistence. Editing
+   inventory must not mislabel old video arriving on a changed route.
+8. Check previews from the intended operator device and finish physical timing/
+   image-quality checks before a research session.
 
-The initial adapter followed the reviewed [Multi-Phone-Splat source](https://github.com/rice-exp-lab/Multi-Phone-Splat) at `85ad82f41d2dcfd2187cd974993c6737b99aaf49`. The wireless preview extension also checked its current `main` at `8060792c88aacde00488910d80b69367d695b3f1`:
-
-- `server.js`: `/api/config`, `/api/gateway`, `/api/job`, `routeFor`, and MediaMTX port/route conventions.
-- `lib/camerascope-color.js`: `getState`, `setColorProcessing`, white balance mode values, `response.state.colorProcessing`.
-- `lib/camerascope-capture.js`: `set` and `sync-many` CLI arguments and per-host sync results.
-
-The supplied [rice-exp/CloneCameraScope](https://github.com/rice-exp/CloneCameraScope) was reviewed at `1c17f73b0fe766caa6d24c6f3db86c528fe1522f`. Its sources are nested under `CameraScope-main/CameraScope-main/`. `app/src/main/java/com/explab/camera/ui/CameraScopeViewModel.kt` establishes the exact requested-state fields and `set` command; `scripts/camerascope_cli.py` establishes the clock sampling/report contract. Set `cameraScopeRoot` to the directory containing **scripts**, not necessarily the repository root. The version installed on the phones still needs lab confirmation.
-
-The player uses the [official MediaMTX WHEP endpoint](https://mediamtx.org/docs/read/webrtc) and browser `RTCPeerConnection`. It gathers ICE before the SDP POST, observes frame progress, and closes peers and WHEP sessions on disconnect, retry or page exit. No packages or new gateway installation are added to the redesign.
-
-## Lab acceptance checks
-
-Automated tests exercise mocked backend/CLI/WHEP responses and real loopback UDP. Browser QA also negotiated and decoded a synthetic H.264 WebRTC loopback stream; it did not use a physical phone or the deployed MediaMTX runtime. Before a research session:
-
-![Operator UI receiving synthetic H.264 video from a local QA gateway; not a physical phone](screenshots/wireless-previews-qa.jpg)
-
-1. Start with one selected phone. Confirm its IP and preview against the physical device.
-2. Close CameraScope or disconnect Wi-Fi. The card must lose response status on the next poll; no green state should survive a stale/disconnected server.
-3. Select only one phone, apply a small supported ISO/exposure/white-balance change, and inspect CameraScope and the live image. Confirm deselected phones were unchanged.
-4. Repeat with one unavailable phone. Verify per-phone failure and recovery details; a successful phone should not hide another phone’s failure.
-5. Synchronize selected phones and inspect the per-IP report. Verify missing results are failures and that the UI expires the result. Do not use this as a sensor-timing acceptance test.
-6. Stop MediaMTX and verify previews become unavailable. Check preview playback from the intended operator browser/device.
-   Start selected previews for one phone and confirm every deselected phone is unchanged. Verify the card reaches Live. Use Retry and Enlarge. Stop selected streams and confirm streaming is off while the phone camera pipeline remains active. Briefly interrupt Wi-Fi and confirm the view loses Live status and reconnects when restored.
-7. Start a workflow in the original app. Rig mutations here must be disabled/rejected. End it before resuming.
-8. Reconcile the original capture settings, then use the existing app for actual capture until later tabs are integrated.
+Source contracts were checked against Multi-Phone-Splat `8060792` and
+CloneCameraScope `1c17f73`. The installed Android revision still needs confirmation.

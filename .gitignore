@@ -4,3 +4,4 @@ node_modules/
 captures/
 dist/
 .DS_Store
+.camerascope/
