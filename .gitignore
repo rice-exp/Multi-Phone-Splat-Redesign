@@ -1,1 +1,6 @@
-
+node_modules/
+.local/
+.env
+captures/
+dist/
+.DS_Store

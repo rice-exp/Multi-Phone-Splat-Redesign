@@ -1,2 +1,96 @@
-# Multi-Phone-Splat-Redesign
-Redesign of webapp
+# Rice Experiential Pixels Lab — Multi-Phone-Splat Redesign
+
+A guided interface for a multi-phone 4D capture rig. **Prepare rig now connects to CameraScope through the existing lab installation.** It reads the original app’s phone inventory, checks each phone over UDP, embeds available MediaMTX streams, applies selected camera settings, and checks clock offsets.
+
+The default page contains real connection controls. **Calibration, capture, transfers, reconstruction, and live participant capture status are not integrated yet.** The complete previous UI prototype is preserved separately at `/?demo=1`; its devices and results remain simulated.
+
+For lab setup, supported commands, and the required hardware checks, read [Prepare rig setup](docs/PREPARE-RIG.md).
+
+![Prepare rig showing setup guidance when the lab backend is unavailable](docs/screenshots/prepare-rig.jpg)
+
+## Run it on your computer
+
+1. Install Node.js 20 or newer from [nodejs.org](https://nodejs.org/). Restart your terminal after installation.
+2. In GitHub Desktop, choose **File → Clone repository → URL**, paste this repository’s URL, and choose a folder.
+3. Select the `feature/guided-capture-ui` branch if it has not yet been merged into `main`.
+4. Choose **Repository → Open in Terminal** in GitHub Desktop.
+5. Run:
+
+   ```sh
+   npm start
+   ```
+
+6. Open **http://127.0.0.1:4317**. On the lab computer, also run the original app on port **4173**. Without it, Prepare rig shows a connection/setup message rather than sample phones. Leave both terminals running. Press **Ctrl+C** to stop a server.
+
+There are no packages to install; `npm install` is unnecessary. `node dev-server.mjs` is equivalent to `npm start`. Do not open `index.html` directly: JavaScript modules and the participant relay need the server. Reload the browser after editing a file; this prototype has no build step or automatic reload.
+
+## Try the complete workflow
+
+Open **http://127.0.0.1:4317/?demo=1** for this **simulation-only** workflow. Demo actions do not call the rig endpoints.
+
+1. **Prepare rig:** all eight sample cameras start selected. Camera 07 has an amber sync warning. Open its help popup or run **Check readiness**. Try selecting none, then all again.
+2. **Camera settings:** adjust exposure, ISO, white balance, and contrast. Compare current and draft views. **Discard** leaves saved values intact; **Apply** updates selected demo cameras and requires another readiness check. The preview approximates the look, not a phone sensor’s actual output.
+3. **Calibration:** use the sample rig profile, create a sample profile, or choose COLMAP for geometry later. Board acquisition and solving are not connected.
+4. **Capture:** enter a session name, frame count, and requested frame rate; check readiness after edits. Start capture. Preview cards explicitly pause during acquisition. Enable the failure example to try recovering a missing transfer without recapturing.
+5. **Frame review:** scrub the common sequence index across cameras. Missing transfers stay distinct from dropped frames. Original capture-report calculations run against generated sample timestamps.
+6. **Reconstruction:** choose 3DGS or 4DGS and compatible geometry. An eight-second simulated run creates a saved demo result.
+7. **Splat review:** drag to orbit, scroll/pinch to zoom, Shift-drag to pan. Click the canvas and use WASD to move or arrows to orbit. Playback/scrubbing preserves the viewpoint. This is a procedural point scene, not a trained Gaussian splat.
+
+**Activity log** provides severity/camera filters, search, explanations, raw details, resolved states, and JSON export. Scrolling up pauses following new events. **Take history** reopens completed takes; reconstruction results retain their inputs. Settings, up to 30 takes, results, and the last 500 events persist in this browser. They are not shared or backed up to GitHub. **Export session summary** saves a JSON copy, not a media archive.
+
+## Participant display in the UI demo
+
+The display keeps **Preparing → In progress → Done** visible together, with only the current stage illuminated. It shows the countdown, reconnects automatically, and warns if active operator status becomes stale.
+
+- On the same computer, click **Open display**. A named popup is reused. Automatic opening at capture start is enabled by default when no display is connected; allow popups for the local app if blocked.
+- For a separate tablet/display, put both devices on the same private Wi-Fi network, then start:
+
+  ```sh
+  npm start -- --host=0.0.0.0
+  ```
+
+- Find the computer’s local IPv4 address in network settings. Open `http://COMPUTER-LAN-IP:4317/participant.html` on the display once. Substitute the actual address (often starting `192.168.`); `127.0.0.1` and `0.0.0.0` are not addresses to use from another device. A host firewall may require allowing Node on the private network.
+- Keep the display page open; it follows later takes automatically. Browsers cannot silently position a window on another physical monitor. Display placement/kiosk setup is a one-time deployment step.
+
+Use one operator browser at a time. The development server has no authentication or TLS; keep it on a trusted private network, not the internet. Prepare rig sends real wireless commands, with an operation lock inside this server. It cannot lock commands issued by the original app; use one app for rig changes at a time. Image transfer remains future integration work. Charging cables are independent.
+
+## How three teammates can work independently
+
+After this feature is reviewed and merged, each teammate clones the repo on their own computer:
+
+1. In GitHub Desktop, switch to **main**, then **Fetch origin / Pull origin**.
+2. Choose **Branch → New branch**. Use names such as `ui/camera-cards`, `ui/error-help`, or `ui/viewer-controls`.
+3. Open the folder in your editor, run `npm start`, and edit your assigned files. Reload the browser to see changes.
+4. Run `npm test`, then click through the affected screens on desktop and at phone width.
+5. Review **Changes** in GitHub Desktop, commit with a short description, and **Publish branch / Push origin**.
+6. Open a pull request into `main`, describing the visible change and what you tested. Include a screenshot. Have a teammate review before merging.
+7. Update each person’s `main` before the next task. Avoid sharing one branch or editing the same file simultaneously.
+
+Suggested ownership: one person handles setup/calibration, one handles capture/errors/participant display, and one handles frame/reconstruction/viewer design. Coordinate edits to shared state and CSS. See [architecture and integration](docs/ARCHITECTURE.md) and the [review checklist](docs/REVIEW-CHECKLIST.md).
+
+## Code map
+
+| File | Purpose |
+| --- | --- |
+| `lib/rig-service.mjs` | Original backend adapter, CameraScope UDP checks, selected settings and CLI clock offset checks |
+| `public/js/rig-app.js` | Real Prepare rig interface, status polling, previews, settings review and error dialogs |
+| `public/js/rig-model.js` | Status expiry, selection and white balance comparison |
+| `public/js/entry.js` | Separates the default real interface from the explicit UI demo |
+| `public/js/views.js` | Guided pages, camera cards, settings and error dialogs |
+| `public/styles.css` | Shared design, responsive layout, participant display |
+| `public/js/model.js` | State, selection, readiness guards, take snapshots and recovery |
+| `public/js/app.js` | UI events, demo jobs, log/history, persistence, display relay |
+| `public/js/preview.js` | Generated camera illustrations and settings approximation |
+| `public/js/viewer.js` | Sample point scene and keyboard/mouse/touch navigation |
+| `public/js/participant.js` | Three-stage screen and reconnect/stale handling |
+| `public/js/capture-metrics.js` | Timing/count calculations ported from the original project |
+| `dev-server.mjs` | Static server, rig API and simulation-only participant relay |
+| `test/` | State, timing, and relay tests using Node’s built-in test runner |
+
+Run **`npm test`** before opening a pull request. GitHub Actions runs the same checks. No camera or GPU is required.
+
+## Relationship to the original project
+
+This redesign follows [rice-exp-lab/Multi-Phone-Splat](https://github.com/rice-exp-lab/Multi-Phone-Splat). The reviewed local source was commit `85ad82f41d2dcfd2187cd974993c6737b99aaf49` on `codex/calibration-splat-cleanup`, ahead of that repository’s saved `main`. The revision deployed on the physical rig remains unconfirmed.
+
+Pure calculations from `lib/camerascope-capture.js` were ported: saved/dropped counts, intervals accounting for missing sequence indices, and cross-camera timing from `actualLeaderNs`. Prepare rig uses its existing API/CLI conventions and the exact UDP state/settings contract verified in [CloneCameraScope](https://github.com/rice-exp/CloneCameraScope) at `1c17f73`. Verify the deployed revision and run the [lab acceptance checks](docs/PREPARE-RIG.md#lab-acceptance-checks) before relying on this integration for a session.
