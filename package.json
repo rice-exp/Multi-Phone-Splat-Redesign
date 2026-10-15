@@ -1,0 +1,9 @@
+{
+  "name": "synced-splat-studio-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone CameraScope rig configuration and wireless live views",
+  "scripts": { "start": "node dev-server.mjs", "dev": "node dev-server.mjs", "test": "node --test", "import-config": "node scripts/import-config.mjs" },
+  "engines": { "node": ">=20" }
+}
