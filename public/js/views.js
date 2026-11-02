@@ -1,3 +1,4 @@
+import {calibrationWorkspace} from './calibration-ui.js';
 import {icon,esc} from './icons.js';
 import {STEPS,readiness,selectedCameras,cameraIssue,captureBlocker,generationBlocker,formatTime} from './model.js';
 import {studioPreview,settingsFilter} from './preview.js';
@@ -9,7 +10,7 @@ const pageHeading=(eyebrow,title,description,aside='')=>`<div class="page-headin
 export function issueCount(state){return state.events.filter(e=>['warning','error'].includes(e.level)&&!e.resolved).length;}
 export function shell(state,{serverOnline=true,displays=0}={}) {
   const step=STEPS.find(s=>s.id===state.step),selected=selectedCameras(state),index=STEPS.indexOf(step);
-  const warnings=issueCount(state);
+  const warnings=issueCount(state),colorTool=state.step==='calibration'&&state.calibrationWorkbench.tab==='color';
   return `<a class="skip-link" href="#workspace">Skip to workspace</a>
   <aside class="sidebar">
     <a class="brand" href="#prepare">${icon('aperture',30)}<div><span>Rice Experiential Pixels Lab</span><small>CAPTURE WORKSPACE</small></div></a>
@@ -18,8 +19,8 @@ export function shell(state,{serverOnline=true,displays=0}={}) {
     <div class="sidebar-bottom"><div class="rig-card"><div class="rig-icon">${icon('wifi',22)}</div><div><strong>Mobile rig 01</strong><span>Private network · demo</span></div><span class="small-dot"></span></div><button class="sidebar-action" data-action="network">${icon('settings',18)} Network settings</button><button class="sidebar-action" data-action="help">${icon('info',18)} Workflow guide</button></div>
   </aside>
   <div class="main-shell">
-    <header class="topbar"><div class="breadcrumb">Capture workspace ${icon('chevron',14)} <strong>${step.name}</strong></div><div class="topbar-tools"><span class="simulation-label"><span></span> Simulation mode</span><button class="icon-button activity-trigger" data-action="logs" aria-label="Open activity log">${icon('log')} ${warnings?`<span class="notification-dot">${warnings}</span>`:''}</button><span class="avatar" aria-label="Lab operator">EX</span></div></header>
-    <div class="session-bar"><div class="session-name">${icon('folder',17)}<span>${esc(state.sessionName)}</span><button class="text-button" data-action="rename">Rename</button><button class="text-button" data-action="history">Take history</button></div><div class="session-meta"><span>${selected.length} cameras selected</span><i></i><span class="${serverOnline?'muted':'text-warning'}">${serverOnline?'Local workspace connected':'Workspace disconnected'}</span></div></div>
+    <header class="topbar"><div class="breadcrumb">Capture workspace ${icon('chevron',14)} <strong>${step.name}</strong></div><div class="topbar-tools"><span class="simulation-label"><span></span> ${colorTool?'Color image processing':'Simulation mode'}</span><button class="icon-button activity-trigger" data-action="logs" aria-label="Open activity log">${icon('log')} ${warnings?`<span class="notification-dot">${warnings}</span>`:''}</button><span class="avatar" aria-label="Lab operator">EX</span></div></header>
+    <div class="session-bar"><div class="session-name">${icon('folder',17)}<span>${esc(state.sessionName)}</span><button class="text-button" data-action="rename">Rename</button><button class="text-button" data-action="history">Take history</button></div><div class="session-meta"><span>${colorTool?'Choose a color source below':`${selected.length} cameras selected`}</span><i></i><span class="${serverOnline?'muted':'text-warning'}">${serverOnline?'Local workspace connected':'Workspace disconnected'}</span></div></div>
     ${!serverOnline?`<div class="connection-banner" role="alert">${icon('warning',18)} The local UI server is unavailable. Participant status may be stale. Waiting to reconnect.</div>`:''}
     <main id="workspace" tabindex="-1"></main>
     <footer class="app-footer"><span>Step ${index+1} of ${STEPS.length} <span class="footer-dot">·</span> ${displays?`${displays} participant display${displays>1?'s':''} connected`:'Participant display not connected'}</span></footer>
@@ -61,17 +62,7 @@ export function prepareView(state,context) {
   </section>
   ${stepFooter(state,'calibration','Continue to calibration',!ready.selected,!ready.selected?'Select a camera to continue.':'')}`;
 }
-export function calibrationView(state) {
-  const selected=selectedCameras(state),valid=state.calibration&&selected.every(c=>state.calibration.cameraIds.includes(c.id));
-  return `${pageHeading('STEP 02 OF 06','Calibration','Select a calibration profile or estimate camera positions during reconstruction.')}${previewRail(state)}
-  <section class="work-section">${section('1','Select camera geometry','Reuse a profile only if the rig, lenses, and framing are unchanged.')}
-  <div class="choice-grid"><button class="choice-card ${valid?'chosen':''}" data-action="use-profile"><span class="choice-icon">${icon('target',25)}</span>${tag('Demo profile','neutral')}<h3>Studio rig profile</h3><p>8 cameras · rear lenses · fixed rig</p><div class="choice-bottom">${valid?`${icon('check',17)} Selected for this session`:'Select demo calibration'} ${icon('arrow',17)}</div></button><button class="choice-card ${!state.calibration?'chosen':''}" data-action="skip-profile"><span class="choice-icon">${icon('cube',25)}</span><h3>Estimate geometry later</h3><p>Capture now and use COLMAP when preparing reconstruction.</p><div class="choice-bottom">${!state.calibration?`${icon('check',17)} COLMAP selected`:'Use COLMAP'} ${icon('arrow',17)}</div></button></div>
-  ${valid?`<div class="notice success-notice">${icon('check',20)}<div><strong>Demo profile covers all ${selected.length} selected cameras</strong><p>Sample profile only; calibration is not validated.</p></div></div>`:''}</section>
-  <section class="work-section">${section('2','Create a calibration profile','Use new board views if the rig or lenses have changed.')}
-  <div class="calibration-workbench"><div class="board-preview">${studioPreview(2,{board:true})}<span>CHaRUCO BOARD · DEMO</span></div><div class="calibration-controls"><h3>Board capture</h3><p>Move the board through the area visible to all selected cameras.</p><div class="field-row"><label>Board poses<input id="calibration-poses" type="number" min="6" max="100" value="20"></label><label>Pause between poses<select id="calibration-interval"><option value="2">2 seconds</option><option value="3">3 seconds</option><option value="5">5 seconds</option></select></label></div>${button(`${icon('play',16)} Create sample profile`,'calibrate','secondary',selected.length?'':'disabled')}<small>Simulation only. No board images are captured or calibration computed.</small></div></div></section>
-  <section class="work-section">${section('3','Review profile','')}<div class="profile-summary"><div>${icon('target',24)}<div><strong>${valid?'Studio rig · demo profile':'Geometry will be estimated with COLMAP'}</strong><p>${valid?'8 / 8 cameras included · illustrative quality report':'No saved profile required.'}</p></div></div>${valid?tag('Demo ready','success'):tag('No profile required','neutral')}</div></section>
-  ${stepFooter(state,'capture','Continue to capture',!selected.length,!selected.length?'Select cameras in Prepare rig.':'')}`;
-}
+export const calibrationView = calibrationWorkspace;
 export function captureView(state,context) {
   const selected=selectedCameras(state),busy=state.capture.status==='running',blocker=captureBlocker(state);
   const c=state.capture,expected=selected.length*state.settings.frames;

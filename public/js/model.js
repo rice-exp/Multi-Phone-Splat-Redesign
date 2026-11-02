@@ -1,3 +1,4 @@
+import {freshCalibration,restoreCalibration} from './calibration-model.js';
 import {analyseCaptureReport} from './capture-metrics.js';
 export const STORAGE_KEY = 'splat-studio-ui-v1';
 export const STEPS = [
@@ -17,7 +18,7 @@ export function initialState() {
   return {
     version:1,sessionName:'Movement study · Take 01',step:'prepare',checked:false,
     cameras:positions.map((position,i)=>({id:`cam-${i+1}`,name:`Camera ${String(i+1).padStart(2,'0')}`,position,selected:true,online:true,synced:i!==6,configured:true,settings:{...DEFAULT_SETTINGS},battery:92-i*3,signal:87-i*2})),
-    settings:{...DEFAULT_SETTINGS},calibration:null,
+    settings:{...DEFAULT_SETTINGS},calibration:null,calibrationWorkbench:freshCalibration(),
     capture:{status:'idle',phase:'idle',progress:0,remaining:0},take:null,takes:[],runs:[],
     reconstruction:{status:'idle',progress:0},model:'4dgs',geometry:'colmap',
     autoParticipant:true,simulateTransferFailure:false,
@@ -38,6 +39,7 @@ export function readiness(state) {
 }
 export function captureBlocker(state,dirty=false) {
   if(!selectedCameras(state).length)return 'Select at least one camera in Prepare rig.';
+  if(state.calibrationWorkbench?.job)return 'Finish or stop the calibration demo first.';
   if(dirty)return 'Apply or discard your settings preview before capture.';
   if(readiness(state).issues.length)return 'Resolve the selected cameras that need attention.';
   if(!state.checked)return 'Run a readiness check for the selected cameras.';
@@ -46,6 +48,7 @@ export function captureBlocker(state,dirty=false) {
   return '';
 }
 export function generationBlocker(state) {
+  if(state.calibrationWorkbench?.job)return 'Finish or stop the calibration demo first.';
   if(!state.take)return 'Capture and transfer a take first.';
   if(state.take.failedTransfers)return 'Retry the missing transfers before reconstructing this demo.';
   if(state.take.cameraIds.length<3)return 'This reconstruction demo requires at least three captured camera views.';
@@ -56,11 +59,11 @@ export function generationBlocker(state) {
   return '';
 }
 export function toggleCamera(state,id,selected) {
-  if(state.capture.status==='running'||state.reconstruction.status==='running')return state;
+  if(state.capture.status==='running'||state.reconstruction.status==='running'||state.calibrationWorkbench?.job)return state;
   return {...state,checked:false,cameras:state.cameras.map(c=>c.id===id?{...c,selected,configured:JSON.stringify(c.settings||state.settings)===JSON.stringify(state.settings)}:c)};
 }
 export function setAllCameras(state,selected) {
-  if(state.capture.status==='running'||state.reconstruction.status==='running')return state;
+  if(state.capture.status==='running'||state.reconstruction.status==='running'||state.calibrationWorkbench?.job)return state;
   return {...state,checked:false,cameras:state.cameras.map(c=>({...c,selected,configured:JSON.stringify(c.settings||state.settings)===JSON.stringify(state.settings)}))};
 }
 export function completeReadiness(state) {
@@ -79,6 +82,7 @@ export function restoreState(storage=globalThis.localStorage) {
     if(saved?.version!==1||!Array.isArray(saved.cameras)||saved.cameras.length!==8||!Array.isArray(saved.events)||!saved.settings)return initialState();
     const defaults=initialState();
     const state={...defaults,...saved,capture:{...defaults.capture,...saved.capture},reconstruction:{...defaults.reconstruction,...saved.reconstruction}};
+    state.calibrationWorkbench=restoreCalibration(saved.calibrationWorkbench);
     if(!STEPS.some(s=>s.id===state.step))state.step='prepare';
     if(state.capture.status==='running'||state.reconstruction.status==='running') {
       if(state.capture.status==='running')state.capture={...state.capture,status:'cancelled',phase:'interrupted'};

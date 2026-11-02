@@ -47,7 +47,7 @@ Stream controls reuse CameraScope's existing Android functionality. They do not 
 
 Applying settings changes the phones; it **does not edit the original app’s saved capture configuration**. That app may reapply its own configuration on the next capture. Reconcile settings there before capturing. The supported ranges are input bounds, not a guarantee that every phone supports them; rejected/clamped values require inspection in CameraScope.
 
-The review dialog shows the requested values before submission. It does not simulate a photographic change. Live previews continue showing actual output. A true before/after image trial and restore needs verified CameraScope state/capture contracts and is not implemented here.
+The review dialog shows the requested values before submission. It does not simulate a photographic change. Prepare rig previews continue showing actual output. The [Color calibration screen](COLOR-CALIBRATION.md) lets the operator choose a leader from live previews, capture one chart frame, and share its correction across every preview in that Calibration screen. Named run presets retain the reference frame and manual adjustments locally. Applying that correction to phone settings, final capture files, or a phone-settings trial and restore still needs pipeline integration and verified CameraScope contracts.
 
 ## Observations that are deliberately not inferred
 
@@ -56,7 +56,7 @@ The review dialog shows the requested values before submission. It does not simu
 - Settings readback compares `iso`, `exposureMs`, `frameDurationMs`, `autoExposureEnabled` and `colorProcessing.awbMode`. These are **requested CameraScope state**, not measured sensor exposure, frame timing or image color. Manual settings explicitly disable auto exposure and clear the white balance lock; both states are checked in readback.
 - A ready gateway route does not prove that the operator’s browser decoded a frame. The separate Live label requires displayed frame progress; negotiation errors, stalls and reconnects appear on the affected card. The view is receive-only and never requests camera/microphone access. There are no public STUN dependencies; the browser and gateway must be reachable on the lab LAN.
 - The clock check measures offsets; it does not change phone clocks or persist the original capture cache (`--no-save`). It is not sensor phase alignment or capture readiness. Fresh offsets must be measured and used by the eventual capture preflight.
-- Calibration, capture, transfer, reconstruction, and the live participant cue are disabled in the real interface. The previous design remains at `/?demo=1`, where all those operations are simulated.
+- Geometry calibration, synchronized capture, transfer, reconstruction, and the live participant cue still require integration. The design workspace at `/?demo=1` simulates those operations. Its Color calibration screen can use real video frames and local image processing; its selected color source is separate from the demo camera inventory.
 - Operation locks are local to this redesign process. It checks the original `/api/job` status before mutations, but cannot prevent another operator from starting work in the original app afterward. Do not issue commands concurrently from both apps.
 - Events and command acknowledgements are held in server memory and reset on restart. Reloading a browser does not restore a green status from local storage.
 

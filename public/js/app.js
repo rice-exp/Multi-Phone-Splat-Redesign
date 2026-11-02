@@ -1,3 +1,5 @@
+import {calibrationAction,tickCalibration,activeSession} from './calibration-model.js';
+import {mountColorWorkbench} from './color-workbench.js';
 import {STEPS,restoreState,saveState,makeEvent,selectedCameras,setAllCameras,toggleCamera,completeReadiness,captureBlocker,generationBlocker,createTake,recoverTransfers,applySettings,formatTime} from './model.js';
 import {shell,VIEW,button,settingsDialog,issueDialog,cameraCard,phaseTitle,phaseDescription,participantIndex} from './views.js';
 import {icon,esc} from './icons.js';
@@ -9,7 +11,7 @@ const context={serverOnline:true,displays:0,frameIndex:0};
 const app=document.querySelector('#app'),overlays=document.querySelector('#overlay-root');
 let viewer,jobTimer,toastTimer,participantWindow,draftSettings,checking=false,relayBusy=false,relayPending=false;
 let logOpen=false,logFollow=true,logUnread=0,logFilters={search:'',level:'all',camera:'all'};
-const busy=()=>state.capture.status==='running'||state.reconstruction.status==='running';
+const busy=()=>state.capture.status==='running'||state.reconstruction.status==='running'||!!state.calibrationWorkbench.job;
 const persist=()=>{if(!saveState(state))toast('Browser storage is unavailable. Export your session summary to keep this work.');};
 const byId=id=>document.getElementById(id);
 function toast(message){const el=byId('toast');el.textContent=message;el.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('visible'),4500);}
@@ -28,6 +30,7 @@ function render(focus=false) {
   viewer?.destroy();viewer=null;
   app.innerHTML=shell(state,context);
   byId('workspace').innerHTML=VIEW[state.step](state,context);
+  mountColorWorkbench(byId('color-workbench'));
   if(window.matchMedia('(max-width:760px)').matches)document.querySelector('.nav-step.active')?.scrollIntoView({block:'nearest',inline:'center'});
   if(state.step==='results')setupViewer();
   if(focus){byId('workspace').focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});}
@@ -237,7 +240,6 @@ const actionHandlers={
   camera:el=>{const c=state.cameras.find(c=>c.id===el.dataset.id);if(!c)return;infoDialog(`${c.name} · ${c.position}`,`${cameraCard(c,state.cameras.indexOf(c),{frame:true,settings:state.step==='frames'?state.take.settings:state.settings,pose:context.frameIndex,paused:state.capture.status==='running'})}<p class="dialog-intro">Simulated camera preview.</p>`);},
   'use-profile':()=>{if(busy())return;state.calibration={id:'demo-studio-rig',name:'Studio rig · demo profile',cameraIds:state.cameras.map(c=>c.id),simulation:true};state.geometry='calibration';record('info','Demo calibration selected. It covers all eight camera positions.',{code:'CALIBRATION_SELECTED'});render();},
   'skip-profile':()=>{if(busy())return;state.calibration=null;state.geometry='colmap';persist();render();},
-  calibrate:()=>{if(busy()||!selectedCameras(state).length)return;const poses=Number(byId('calibration-poses').value),interval=Number(byId('calibration-interval').value);if(!Number.isInteger(poses)||poses<6||poses>100||!Number.isFinite(interval)||interval<1||interval>10){toast('Choose 6–100 poses and a 1–10 second interval.');return;}state.calibration={id:`demo-profile-${Date.now()}`,name:'New demo calibration',cameraIds:selectedCameras(state).map(c=>c.id),poses,interval,simulation:true};state.geometry='calibration';record('success',`Demo calibration profile created for ${state.calibration.cameraIds.length} cameras.`,{code:'CALIBRATION_CREATED',detail:'No board detection or calibration computation was performed.'});render();toast('Demo profile created. Continue to capture.');},
   capture:startCapture,'stop-capture':stopCapture,'retry-transfer':el=>retryTransfer(el.dataset.take||state.take?.id),
   'previous-frame':()=>showFrame(context.frameIndex-1),'next-frame':()=>showFrame(context.frameIndex+1),
   model:el=>{if(busy())return;state.model=el.dataset.value;persist();render();},
@@ -274,6 +276,57 @@ document.addEventListener('change',event=>{
   if(el.id==='log-follow'){logFollow=el.checked;logUnread=0;renderLogEntries();}
 });
 window.addEventListener('hashchange',()=>navigate(location.hash.slice(1)));
+function calibrationCommand(action) {
+  if(checking||state.capture.status==='running'||state.reconstruction.status==='running') {
+    toast('Finish the active workflow before changing calibration.');return;
+  }
+  const w=state.calibrationWorkbench;
+  if(action==='use') {
+    const session=activeSession(w),profile=w.profiles.find(p=>p.id===session?.profileId);
+    if(!profile||w.job)return;
+    state.calibration={...structuredClone(profile),cameraIds:profile.cameras.map(c=>c.id)};
+    state.geometry='calibration';w.message='Sample profile selected for capture and reconstruction. No measured calibration data is present.';
+  } else state.calibrationWorkbench=calibrationAction(w,action,selectedCameras(state));
+  persist();render();
+}
+document.addEventListener('submit',event=>{
+  if(event.target.id!=='cal-board-form')return;
+  event.preventDefault();calibrationCommand('new');
+});
+document.addEventListener('click',event=>{
+  const el=event.target.closest('[data-cal-tab],[data-cal-action]');if(!el||el.disabled)return;
+  if(el.dataset.calTab){
+    state.calibrationWorkbench.tab=el.dataset.calTab;state.calibrationWorkbench.message='';persist();render();
+    document.querySelector('.cal-tabs').scrollIntoView({block:'start',behavior:'instant'});
+    document.querySelector('.cal-tab.active').focus({preventScroll:true});
+  }
+  else calibrationCommand(el.dataset.calAction);
+});
+document.addEventListener('input',event=>{
+  const el=event.target,key=el.dataset.calField;if(!key||busy())return;
+  const value=el.type==='number'?Number(el.value):el.value;
+  if(key==='tagSizeMm')state.calibrationWorkbench.tagSizeMm=value;
+  else state.calibrationWorkbench.draft[key]=value;
+  persist();
+});
+document.addEventListener('change',event=>{
+  const el=event.target,w=state.calibrationWorkbench;if(busy())return;
+  if(el.dataset.calField==='dictionary'){w.draft.dictionary=el.value;persist();}
+  if(el.dataset.calField==='tagSizeMm'){persist();render();}
+  if(el.dataset.calSelect==='session'){w.activeId=el.value;w.draft={...activeSession(w).board};w.message='';persist();render();}
+  if(el.dataset.calSelect==='profile'){w.profileId=el.value;w.message='';persist();render();}
+  if(el.dataset.calSelect==='tagFamily'){w.tagFamily=el.value;persist();}
+});
+setInterval(()=>{
+  const previous=state.calibrationWorkbench,next=tickCalibration(previous);
+  const countdown=byId('cal-countdown');
+  if(countdown&&previous.job)countdown.textContent=Math.max(0,Math.ceil((previous.job.nextAt-Date.now())/1000));
+  if(next===previous)return;
+  state.calibrationWorkbench=next;persist();
+  if(previous.job&&!next.job)record('info',next.message||'Sample calibration stage completed.',{stage:'calibration',code:'CALIBRATION_DEMO_PROGRESS'});
+  if(state.step==='calibration')render();
+},250);
 window.addEventListener('pagehide',()=>{if(state.capture.status==='running')navigator.sendBeacon('/api/participant/state',JSON.stringify({...participantPayload(),phase:'interrupted',remaining:0}));});
 if(STEPS.some(s=>s.id===location.hash.slice(1)))state.step=location.hash.slice(1);
+if(new URLSearchParams(location.search).get('calibration')==='color')state.calibrationWorkbench.tab='color';
 render();relayParticipant();setInterval(relayParticipant,1000);

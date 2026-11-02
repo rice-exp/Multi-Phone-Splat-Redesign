@@ -32,7 +32,7 @@ Open **http://127.0.0.1:4317/?demo=1** for this **simulation-only** workflow. De
 
 1. **Prepare rig:** all eight sample cameras start selected. Camera 07 has an amber sync warning. Open its help popup or run **Check readiness**. Try selecting none, then all again.
 2. **Camera settings:** adjust exposure, ISO, white balance, and contrast. Compare current and draft views. **Discard** leaves saved values intact; **Apply** updates selected demo cameras and requires another readiness check. The preview approximates the look, not a phone sensor’s actual output.
-3. **Calibration:** use the sample rig profile, create a sample profile, or choose COLMAP for geometry later. Board acquisition and solving are not connected.
+3. **Calibration:** open the three-screen workspace at `/?demo=1#calibration`. Collect sample ChArUco poses, finish transfer, step through the six solver stages, then create a separate AprilTag pose update. Sessions and profiles persist in this browser. Real board acquisition and solving are not connected. See [Calibration workspace preview](docs/CALIBRATION-UI.md).
 4. **Capture:** enter a session name, frame count, and requested frame rate; check readiness after edits. Start capture. Preview cards explicitly pause during acquisition. Enable the failure example to try recovering a missing transfer without recapturing.
 5. **Frame review:** scrub the common sequence index across cameras. Missing transfers stay distinct from dropped frames. Original capture-report calculations run against generated sample timestamps.
 6. **Reconstruction:** choose 3DGS or 4DGS and compatible geometry. An eight-second simulated run creates a saved demo result.
@@ -71,6 +71,8 @@ After this feature is reviewed and merged, each teammate clones the repo on thei
 Suggested ownership: one person handles setup/calibration, one handles capture/errors/participant display, and one handles frame/reconstruction/viewer design. Coordinate edits to shared state and CSS. See [architecture and integration](docs/ARCHITECTURE.md) and the [review checklist](docs/REVIEW-CHECKLIST.md).
 
 ## Code map
+
+The Calibration tab also includes [leader color calibration](docs/COLOR-CALIBRATION.md): choose a leader from live camera previews, capture one chart frame, detect the chart automatically, and share the resulting correction across all Calibration previews. Named run presets save the reference frame and adjustments for later reuse and manual refinement. Device-camera/upload/sample tests and manual alignment remain available. It does not apply color settings to phones or process full-resolution capture files.
 
 | File | Purpose |
 | --- | --- |
