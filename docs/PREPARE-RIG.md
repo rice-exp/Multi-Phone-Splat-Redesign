@@ -115,8 +115,8 @@ another controller concurrently. There is no distributed lock with the old app.
   reconnect. **Retry** reconnects only the browser; **Enlarge** expands the card.
   The player is receive-only and needs no camera/microphone permission or public
   STUN service. WHEP sessions and peers are released on retry, disconnect and exit.
-- Toggling streams/destinations can restart CameraScope's pipeline. Finish takes
-  and recordings first. Selected phones reporting H.264 recording reject settings
+- Toggling streams/destinations can restart CameraScope's pipeline. Finish takes and
+  recordings first. Selected phones reporting H.264 recording reject settings
   and stream mutations. Commands require acknowledgements and matching state;
   timeouts are not automatically retried because a command may have arrived.
 - Clock checks use `sync-many --no-save`; offsets expire after 60 seconds and are
@@ -138,10 +138,21 @@ another controller concurrently. There is no distributed lock with the old app.
 - Calibration, capture, transfer, reconstruction and participant capture status
   remain integration work. The complete UI simulation remains at `/?demo=1`.
 
+The review dialog shows the requested values before submission. It does not simulate a photographic change. Prepare rig previews continue showing actual output. The [Color calibration screen](COLOR-CALIBRATION.md) lets the operator choose a leader from live previews, capture one chart frame, and share its correction across every preview in that Calibration screen. Named run presets retain the reference frame and manual adjustments locally. Applying that correction to phone settings, final capture files, or a phone-settings trial and restore still needs pipeline integration and verified CameraScope contracts.
+
 The legacy-format mock below confirms matching numeric values while leaving the
 missing auto-exposure flag explicitly unverified; it does not contact a phone.
 
 ![Partial settings verification with requested and reported values](screenshots/settings-readback-qa.jpg)
+
+- The running count uses CameraScope’s `isCapturing`, which means its camera pipeline is active, not that a research take is recording. A valid response alone does not count as running.
+- Battery level and Wi-Fi strength are omitted; the available source does not establish those fields.
+- Settings readback compares `iso`, `exposureMs`, `frameDurationMs`, `autoExposureEnabled` and `colorProcessing.awbMode`. These are **requested CameraScope state**, not measured sensor exposure, frame timing or image color. Manual settings explicitly disable auto exposure and clear the white balance lock; both states are checked in readback.
+- A ready gateway route does not prove that the operator’s browser decoded a frame. The separate Live label requires displayed frame progress; negotiation errors, stalls and reconnects appear on the affected card. The view is receive-only and never requests camera/microphone access. There are no public STUN dependencies; the browser and gateway must be reachable on the lab LAN.
+- The clock check measures offsets; it does not change phone clocks or persist the original capture cache (`--no-save`). It is not sensor phase alignment or capture readiness. Fresh offsets must be measured and used by the eventual capture preflight.
+- Geometry calibration, synchronized capture, transfer, reconstruction, and the live participant cue still require integration. The design workspace at `/?demo=1` simulates those operations. Its Color calibration screen can use real video frames and local image processing; its selected color source is separate from the demo camera inventory.
+- Operation locks are local to this redesign process. It checks the original `/api/job` status before mutations, but cannot prevent another operator from starting work in the original app afterward. Do not issue commands concurrently from both apps.
+- Events and command acknowledgements are held in server memory and reset on restart. Reloading a browser does not restore a green status from local storage.
 
 ## Verification and lab acceptance
 
