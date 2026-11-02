@@ -1,3 +1,5 @@
+import {settingsVerification} from './settings-readback.js';
+
 export const FRESH_MS = 20000;
 export function observedPhones(status, now = Date.now()) {
   const fresh = status.connected && now - status.checkedAt <= FRESH_MS;
@@ -19,7 +21,7 @@ export function colorStatus(phone, requested) {
 }
 export function configurationStatus(phone,requested) {
   const actual=phone.responding?phone.state:null;
-  if(!actual||!requested||!['iso','exposureMs','frameDurationMs'].every(key=>typeof actual[key]==='number')||typeof actual.autoExposureEnabled!=='boolean'||!actual.colorProcessing?.awbMode)return {label:'Configuration unknown',tone:'warning'};
-  const match=actual.iso===requested.iso&&Math.abs(actual.exposureMs-requested.exposureMs)<=0.001&&Math.abs(actual.frameDurationMs-1000/requested.frameRate)<=0.001&&actual.autoExposureEnabled===false&&actual.colorProcessing.awbMode===requested.awbMode&&actual.colorProcessing.awbLock===false;
-  return {label:match?'Configuration matches':'Configuration differs',tone:match?'success':'warning'};
+  if(!actual||!requested)return {label:'Configuration unknown',tone:'warning'};
+  const {status}=settingsVerification(actual,requested);
+  return {label:status==='confirmed'?'Configuration matches':status==='partial'?'Settings partly verified':status==='unavailable'?'Configuration unknown':'Configuration differs',tone:status==='confirmed'?'success':'warning'};
 }

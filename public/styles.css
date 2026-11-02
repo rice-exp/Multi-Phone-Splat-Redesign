@@ -3676,3 +3676,8 @@ dialog::backdrop {
 .rig-config-enabled input { width:16px; height:16px; flex:none; }
 #rig-connection h3 { margin: 20px 0 8px; }
 @media(max-width:600px) { .rig-live-label { display:none; } .rig-config-phone { grid-template-columns: 1fr; } .rig-config-phone .rig-config-enabled { grid-column: auto; } }
+.rig-verification { margin:12px 0 18px; }
+.rig-verification summary { cursor:pointer; font-weight:600; }
+.rig-verification-scroll { overflow-x:auto; margin-top:10px; }
+.rig-verification table { width:100%; border-collapse:collapse; font-size:12px; }
+.rig-verification th,.rig-verification td { padding:8px; border-bottom:1px solid var(--line); text-align:left; }

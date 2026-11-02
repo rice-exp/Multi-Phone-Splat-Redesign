@@ -124,8 +124,24 @@ another controller concurrently. There is no distributed lock with the old app.
   They do not set phone clocks or establish sensor phase/capture readiness.
 - Manual settings readback verifies requested CameraScope state, not measured
   sensor exposure/color/timing. Phone-supported limits still need lab verification.
+- Older CameraScope builds may omit `autoExposureEnabled` or white-balance
+  reporting. If ISO, exposure and frame interval match, missing optional fields
+  produce an amber **Settings partly verified** result, not a false mismatch.
+  Missing core numeric values or reported differences still fail verification.
+  Each settings result includes a requested/reported comparison; unreported
+  fields are never counted as confirmed, and `requestedStateConfirmed` remains
+  false for partial verification. The activity log retains the comparison.
+  For example, a 29 FPS request corresponds to approximately 34.482759 ms.
+  CameraScope may report that requested interval while its phase report and
+  device-override messages show an actual interval near 33.333333 ms (30 FPS).
+  Readback success does not override a hardware limit.
 - Calibration, capture, transfer, reconstruction and participant capture status
   remain integration work. The complete UI simulation remains at `/?demo=1`.
+
+The legacy-format mock below confirms matching numeric values while leaving the
+missing auto-exposure flag explicitly unverified; it does not contact a phone.
+
+![Partial settings verification with requested and reported values](screenshots/settings-readback-qa.jpg)
 
 ## Verification and lab acceptance
 

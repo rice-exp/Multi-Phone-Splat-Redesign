@@ -2,6 +2,7 @@ import {icon,esc} from './icons.js';
 import {STEPS} from './model.js';
 import {observedPhones,selectionFor,colorStatus,configurationStatus} from './rig-model.js';
 import {LivePreview,previewEndpoint} from './live-preview.js';
+import {verificationMessage,settingValue} from './settings-readback.js';
 
 const app=document.getElementById('app'), overlays=document.getElementById('overlay-root');
 const byId=id=>document.getElementById(id);
@@ -10,7 +11,11 @@ let status={connected:false,phones:[],events:[],checkedAt:0}, selection={}, busy
 let settingsDirty=false, initializedSettings=false, toastTimer, dialogTrigger;
 const players=new Map();
 const resultLabel=action=>action==='settings'?'Settings results':action==='sync'?'Clock check results':'Wireless preview results';
-const successLabel=action=>action==='settings'?'CameraScope settings confirmed by readback.':action==='sync'?'Clock offset measured.':action==='preview-start'?'Wireless stream enabled. Waiting for browser video.':'Wireless stream disabled. Camera pipeline was not stopped.';
+const successLabel=(action,result)=>action==='settings'&&result?.verification?verificationMessage(result.verification):action==='sync'?'Clock offset measured.':action==='preview-start'?'Wireless stream enabled. Waiting for browser video.':'Wireless stream disabled. Camera pipeline was not stopped.';
+function verificationTable(verification){
+  if(!verification)return '';
+  return `<details class="rig-verification" ${verification.status!=='confirmed'?'open':''}><summary>Requested and reported settings</summary><div class="rig-verification-scroll"><table><thead><tr><th>Setting</th><th>Requested</th><th>Reported</th><th>Check</th></tr></thead><tbody>${verification.fields.map(field=>`<tr><th scope="row">${esc(field.label)}</th><td>${esc(settingValue(field.expected))}</td><td>${esc(settingValue(field.reported))}</td><td class="${field.status==='match'?'text-success':'text-warning'}">${field.status==='match'?'Matches':field.status==='unreported'?'Unverified':'Differs'}</td></tr>`).join('')}</tbody></table></div><p class="rig-caption">Reported values are CameraScope’s requested state. Device hardware may override them; inspect the phone’s recent messages and phase report for sensor behavior.</p></details>`;
+}
 try { selection=JSON.parse(localStorage.getItem('rig-selection-v1')||'{}')||{}; } catch {}
 const phones=()=>observedPhones(status);
 const selected=()=>phones().filter(phone=>selection[phone.id]);
@@ -113,7 +118,7 @@ function updateStatus(){
   byId('rig-sync').textContent=busy&&status.busy==='sync'?'Checking clocks…':'Check clocks';
   byId('rig-sync-summary').textContent=`${chosen.filter(p=>p.sync).length} of ${chosen.length} selected phones have a fresh successful clock-sync result.`;
   byId('rig-preview-note').textContent=status.gateway?.running?`Gateway available · Video destination ${status.destination||'not configured'}. A Live label confirms frames in this browser.`:'Preview gateway unavailable. Open Connection setup to start it.';
-  if(lastResult)byId('rig-command-results').innerHTML=`<div class="rig-result-list"><strong>${resultLabel(lastResult.action)}</strong>${lastResult.results.map(r=>`<p class="${r.ok?'text-success':'text-warning'}">${esc(r.id)}: ${esc(r.ok?successLabel(lastResult.action):`${r.error.message} ${r.error.next}`)}</p>`).join('')}${lastResult.action==='settings'?'<p class="rig-caption">Results record the last command. Check live state for later changes. Saved camera defaults are unchanged.</p>':''}</div>`;
+  if(lastResult)byId('rig-command-results').innerHTML=`<div class="rig-result-list"><strong>${resultLabel(lastResult.action)}</strong>${lastResult.results.map(r=>`<p class="${r.ok&&r.verification?.status!=='partial'?'text-success':'text-warning'}">${esc(r.id)}: ${esc(r.ok?successLabel(lastResult.action,r):`${r.error.message} ${r.error.next}`)}</p>${verificationTable(r.verification)}`).join('')}${lastResult.action==='settings'?'<p class="rig-caption">Results record the last command. Check live state for later changes. Saved camera defaults are unchanged.</p>':''}</div>`;
 }
 async function request(url,value){const response=await fetch(url,{...(value===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Rig-Request':'1'},body:JSON.stringify(value)}),signal:AbortSignal.timeout(value===undefined?12000:120000)});const result=await response.json();if(!response.ok)throw Object.assign(new Error(result.error||`HTTP ${response.status}`),result);return result;}
 async function refresh(manual=false){
@@ -126,8 +131,9 @@ async function operate(action,settings,ids=selected().map(p=>p.id)){
   if(!canOperate())return;closeDialog();busy=true;status.busy=action;updateStatus();
   try{const result=await request(`/api/rig/${action}`,{ids,settings});lastResult={action,results:result.results};status=result.status;status.busy=null;
     if(action==='settings'&&result.ok)settingsDirty=false;
-    toast(result.ok?'Command completed. Review the per-phone results.':'Some phones need attention. Review the per-phone results.');
-    if(!result.ok)dialog('Some phones need attention',result.results.filter(r=>!r.ok).map(r=>`<p><strong>${esc(r.id)}</strong>: ${esc(r.error.message)}</p><p>${esc(r.error.next)}</p>`).join(''));
+    const partial=result.results.some(r=>r.verification?.status==='partial');
+    toast(!result.ok?'Some phones need attention. Review the per-phone results.':partial?'Settings sent. Some fields are unreported; review verification details.':'Command completed. Review the per-phone results.');
+    if(!result.ok)dialog('Some phones need attention',result.results.filter(r=>!r.ok).map(r=>`<p><strong>${esc(r.id)}</strong>: ${esc(r.error.message)}</p><p>${esc(r.error.next)}</p>${verificationTable(r.verification)}`).join(''));
   }catch(error){dialog('Rig operation could not complete',`<p>${esc(error.message)}</p><p>${esc(error.next||'Read status before retrying. A timed-out command may still be running on the server.')}</p>`);}
   finally{busy=false;status.busy=null;await refresh(true);}
 }
@@ -136,7 +142,7 @@ function reviewSettings(){
   const value={iso:Number(byId('rig-iso').value),exposureMs:Number(byId('rig-exposure').value),frameRate:Number(byId('rig-fps').value),awbMode:byId('rig-awb').value};
   if(value.exposureMs>1000/value.frameRate){toast('Exposure must not exceed the requested frame interval.');return;}
   const chosen=selected();
-  dialog('Review camera settings',`<p>Apply to ${chosen.length} selected phones: ${esc(chosen.map(p=>p.name).join(', '))}.</p><dl class="issue-facts"><dt>ISO</dt><dd>${value.iso}</dd><dt>Exposure</dt><dd>${value.exposureMs} ms</dd><dt>Requested rate</dt><dd>${value.frameRate} fps</dd><dt>White balance</dt><dd>${esc(value.awbMode)}</dd></dl><p>Changes selected phones only. Auto exposure and white balance lock will be off. Readback verifies CameraScope settings; measured sensor output is not verified.</p><p class="rig-caption">CameraScope records requested settings independently of the saved defaults.</p>`,`${button('Cancel','close')}${button('Apply to selected phones','apply','primary')}`);
+  dialog('Review camera settings',`<p>Apply to ${chosen.length} selected phones: ${esc(chosen.map(p=>p.name).join(', '))}.</p><dl class="issue-facts"><dt>ISO</dt><dd>${value.iso}</dd><dt>Exposure</dt><dd>${value.exposureMs} ms</dd><dt>Requested rate</dt><dd>${value.frameRate} fps</dd><dt>White balance</dt><dd>${esc(value.awbMode)}</dd></dl><p>Changes selected phones only. Auto exposure and white balance lock are requested off. Unreported fields remain unverified. Readback verifies CameraScope settings; measured sensor output is not verified.</p><p class="rig-caption">CameraScope records requested settings independently of the saved defaults.</p>`,`${button('Cancel','close')}${button('Apply to selected phones','apply','primary')}`);
   reviewed={value,ids:chosen.map(p=>p.id)};
 }
 function reviewPreview(enable){
