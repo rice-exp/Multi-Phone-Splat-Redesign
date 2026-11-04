@@ -1,4 +1,7 @@
 import {participantView} from './participant-state.js';
+import {workspaceBrand,themeToggle} from './workflow.js';
+document.querySelector('#participant-brand').innerHTML=workspaceBrand();
+document.querySelector('#participant-theme').innerHTML=themeToggle();
 const connection=document.querySelector('#connection');
 const stream=new EventSource('/api/participant/events');
 let lastState=null;

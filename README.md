@@ -26,6 +26,8 @@ Each camera card distinguishes phone response, gateway availability, and browser
 
 There are no packages to install; `npm install` is unnecessary. `node dev-server.mjs` is equivalent to `npm start`. Do not open `index.html` directly: JavaScript modules and APIs need the server. Reload the browser after editing a file; the app has no build step or automatic reload.
 
+Use **Dark mode** in the upper right to change the interface theme. The app starts with your system preference, then remembers your choice across pages and tabs in this browser. Camera images and calibration pixels are unaffected. The Rice crest is bundled locally; the link below the lab title opens `https://pixels.rice.edu/` in a new tab.
+
 ## Review saved captures
 
 Open **http://localhost:4317/frames**, or select **Frame review** from Prepare rig. Choose a transferred capture session, scrub a common sequence index across cameras, enlarge images, inspect timing, and identify capture drops separately from transfer failures or missing local files. Playback, display filters, image rotation, and JSON review exports are available. These actions do not modify capture files or command phones.

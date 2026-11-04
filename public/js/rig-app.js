@@ -1,5 +1,5 @@
 import {icon,esc} from './icons.js';
-import {workflowNavigation,centerWorkflow} from './workflow.js';
+import {workflowNavigation,centerWorkflow,workspaceBrand,workspaceHeader} from './workflow.js';
 import {observedPhones,selectionFor,colorStatus,configurationStatus} from './rig-model.js';
 import {LivePreview,previewEndpoint} from './live-preview.js';
 import {verificationMessage,settingValue} from './settings-readback.js';
@@ -33,10 +33,10 @@ function dialog(title,content,footer='') {
 function persistSelection(){try{localStorage.setItem('rig-selection-v1',JSON.stringify(selection));}catch{toast('Selection will reset when this page closes.');}}
 function renderShell(){
   app.innerHTML=`<a class="skip-link" href="#workspace">Skip to workspace</a><aside class="sidebar">
-    <a class="brand" href="/">${icon('aperture',30)}<div><span>Rice Experiential Pixels Lab</span><small>CAPTURE WORKSPACE</small></div></a>
+    ${workspaceBrand()}
     <div class="sidebar-label">WORKFLOW</div><nav class="step-nav" aria-label="Capture workflow">${workflowNavigation('prepare')}</nav>
     <div class="sidebar-bottom"><div class="rig-card"><div class="rig-icon">${icon('wifi',22)}</div><div><strong>Lab rig</strong><span>CameraScope · private network</span></div></div><button class="sidebar-action" data-rig-action="setup">${icon('settings',18)} Connection setup</button><a class="sidebar-action" href="/participant.html" target="participant-display">${icon('monitor',18)} Participant display</a></div></aside>
-    <div class="main-shell"><header class="topbar"><div class="breadcrumb">Capture workspace ${icon('chevron',14)} <strong>Prepare rig</strong></div><div class="topbar-tools"><span class="simulation-label rig-live-label">Device connection</span>${button('Connection setup','setup','secondary small')}<button class="icon-button" data-rig-action="logs" aria-label="Open activity log">${icon('log')}</button></div></header>
+    <div class="main-shell">${workspaceHeader('Prepare rig',`<span class="simulation-label rig-live-label">Device connection</span>${button('Connection setup','setup','secondary small')}<button class="icon-button" data-rig-action="logs" aria-label="Open activity log">${icon('log')}</button>`)}
     <div class="session-bar"><span>Lab rig preparation</span><span id="rig-freshness" role="status">Connecting…</span></div>
     <main id="workspace" tabindex="-1"><div class="page-heading"><div><div class="eyebrow">STEP 01 OF 06</div><h1>Prepare rig</h1><p>Check phone connections, camera settings and clock offsets.</p></div>${button(`${icon('refresh',16)} Refresh status`,'refresh','primary','id="rig-refresh"')}</div>
       <div id="rig-banner" aria-live="polite"></div><div id="rig-stats" class="stats-grid"></div>
