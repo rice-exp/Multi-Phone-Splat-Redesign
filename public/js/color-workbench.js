@@ -10,8 +10,7 @@ const cornerNames={
   [CLASSIC24.id]:['top-left (dark skin)','top-right (bluish green)','bottom-right (black)','bottom-left (white)'],
   [SPYDER24.id]:['top-left (white)','top-right (aqua)','bottom-right (dark skin)','bottom-left (black)']
 };
-const w={chart:CLASSIC24,image:null,source:'',sample:false,corners:[],fit:null,samples:[],adjust:defaultAdjustments(),split:50,camera:'Camera 01 · rear',name:'Studio lighting',message:'',profiles:[],loaded:false,loading:false,cursor:[0.5,0.5],input:'rig',rig:null,rigId:'',rigMessage:'Refresh cameras to find running previews.',captureMeta:null,alignment:'auto',detection:null};
-w.camera='No leader selected';
+const w={chart:CLASSIC24,image:null,source:'',sample:false,corners:[],fit:null,samples:[],adjust:defaultAdjustments(),split:50,camera:'',name:'',message:'',profiles:[],loaded:false,loading:false,cursor:[0.5,0.5],input:'rig',rig:null,rigId:'',rigMessage:'Refresh cameras to find running previews.',captureMeta:null,alignment:'auto',detection:null};
 let previewPixels=null,animation,activeRoot=null,worker=null,rejectDetection=null,cameraMessage='Camera disconnected',viewGeneration=0,connecting=false;
 let leaderState={activeId:null,presets:[]},overview=null,liveColor=null,pollTimer=null,pollBusy=false,showOriginal=false,liveError='';
 w.editingPresetId=null;
@@ -114,10 +113,10 @@ function sourceControls() {
   const phones=availableColorCameras(w.rig);
   return `<label>Reference source<select id="color-source" ${w.loading?'disabled':''}><option value="rig" ${w.input==='rig'?'selected':''}>Rig camera · wireless preview</option><option value="device" ${w.input==='device'?'selected':''}>This device’s camera</option><option value="photo" ${w.input==='photo'?'selected':''}>Upload a photo</option></select></label>
   ${w.input==='photo'?upload('Open chart photo','color-photo','image/jpeg,image/png,image/webp',w.loading):`
-    ${w.input==='rig'?`<label class="color-camera-select">Selected leader<select id="color-rig-camera" ${w.loading||!phones.length?'disabled':''}>${!phones.length?'<option>No live rig previews available</option>':phones.map(p=>`<option value="${esc(p.id)}" ${p.id===w.rigId?'selected':''}>${esc(p.name)} · ${esc(p.ip)}</option>`).join('')}</select></label><p class="cal-caption"><span id="color-rig-status">${esc(w.rigMessage)}</span> Start phone previews in <a href="/" target="_blank">Prepare rig</a>.</p><div class="cal-actions">${button('Refresh cameras','refresh-cameras',w.loading)}${button('Connect leader preview','connect-rig',w.loading||!phones.some(p=>p.id===w.rigId))}</div>`:`<p class="cal-caption">Use this device’s camera to try the chart workflow. A shared rig preset needs a leader chosen from the rig previews above. No microphone is used.</p><div class="cal-actions">${button('Connect device camera','connect-device',w.loading)}</div>`}
+    ${w.input==='rig'?`<label class="color-camera-select">Selected leader<select id="color-rig-camera" ${w.loading||!phones.length?'disabled':''}>${!phones.length?'<option>No live rig previews available</option>':phones.map(p=>`<option value="${esc(p.id)}" ${p.id===w.rigId?'selected':''}>${esc(p.name)} · ${esc(p.ip)}</option>`).join('')}</select></label><p class="cal-caption"><span id="color-rig-status">${esc(w.rigMessage)}</span> Start phone previews in <a href="/" target="_blank">Prepare rig</a>.</p><div class="cal-actions">${button('Refresh cameras','refresh-cameras',w.loading)}${button('Connect leader preview','connect-rig',w.loading||!phones.some(p=>p.id===w.rigId))}</div>`:`<p class="cal-caption">Capture a reference image from this device’s camera. A shared rig preset needs a leader chosen from the rig previews above. No microphone is used.</p><div class="cal-actions">${button('Connect device camera','connect-device',w.loading)}</div>`}
     <div id="color-live-host" class="color-live-host">${!camera.video?`<div class="color-live-empty">${icon('camera',26)}<span>Connect a camera to frame the chart</span></div>`:''}</div><p id="color-camera-status" class="cal-caption" role="status">${esc(cameraMessage)}</p>
     <p id="color-applied-status" class="color-application-status" role="status"></p><div class="cal-actions">${button('Show original','toggle-original',true)}</div>
-    <div class="cal-actions">${button(w.input==='rig'?'Capture leader & apply to all':'Capture & calibrate','capture',w.loading||!camera.ready,true)}${button('Disconnect camera','disconnect',!camera.video)}</div><p class="cal-caption">${w.input==='rig'?'Takes one original frame from the leader, finds the chart, saves a shared preset and applies the same correction to every rig preview. You can then remove the chart. Keep lighting, lens, exposure and white balance consistent.':'Captures one fresh frame for the local chart comparison. Device-camera tests are not applied to the rig.'}</p>`}`;
+    <div class="cal-actions">${button(w.input==='rig'?'Capture leader & apply to all':'Capture & calibrate','capture',w.loading||!camera.ready,true)}${button('Disconnect camera','disconnect',!camera.video)}</div><p class="cal-caption">${w.input==='rig'?'Takes one original frame from the leader, finds the chart, saves a shared preset and applies the same correction to every rig preview. You can then remove the chart. Keep lighting, lens, exposure and white balance consistent.':'Captures one fresh frame for the local chart comparison. Device-camera corrections are not applied to the rig.'}</p>`}`;
 }
 
 function patchChecks() {
@@ -136,22 +135,21 @@ function patchChecks() {
 
 function markup() {
   const ready=!!w.image,fit=w.fit,quality=patchQualitySummary(w.samples);
-  return `<section class="color-intro"><div><div class="eyebrow">LEADER COLOR CALIBRATION</div><h2>Calibrate once. Share across the rig.</h2><p>Choose one leader camera. Every camera uses that leader’s color correction.</p></div><span class="pill neutral">${w.sample?'Sample image':w.captureMeta?'Leader / reference frame':ready?'Uploaded photo':'Choose a leader'}</span></section>
+  return `<section class="color-intro"><div><div class="eyebrow">LEADER COLOR CALIBRATION</div><h2>Calibrate once. Share across the rig.</h2><p>Choose one leader camera. Every camera uses that leader’s color correction.</p></div><span class="pill neutral">${w.captureMeta?'Leader / reference frame':ready?'Uploaded photo':'Choose a leader'}</span></section>
   <section class="work-section color-fleet"><div class="section-heading"><div><h2>Choose the leader from your previews</h2><p>Pick a camera with a clear view of the color chart under your capture lighting. The other cameras do not need to see the chart.</p></div>${button('Refresh camera overview','refresh-cameras',w.loading)}</div><div id="color-camera-overview"></div><div class="color-shared-summary"><p id="color-shared-status" class="color-application-status" role="status"></p>${button('Disable shared correction','disable-shared',!activeLeaderPreset()||w.loading)}</div><p class="cal-caption">One shared preset assumes similar cameras and stable lighting. It applies to Calibration previews in this browser; phone settings and final capture files are not changed yet.</p></section>
   <div class="color-layout"><div class="color-setup"><section class="work-section"><div class="section-title"><span class="section-number">1</span><div><h2>Get a reference frame</h2><p>Use the same lighting and camera settings as your capture.</p></div></div>
     <div class="cal-fields color-fields"><label>Leader / reference camera<input id="color-camera" value="${esc(w.camera)}" maxlength="80" ${w.captureMeta?'readonly':''}></label><label>Run / lighting preset name<input id="color-name" value="${esc(w.name)}" maxlength="80"></label></div>
     <label>Chart reference<select id="color-chart" ${w.loading?'disabled':''}><option value="classic" ${w.chart.id===CLASSIC24.id?'selected':''}>Calibrite ColorChecker Classic</option><option value="spyder" ${w.chart.id===SPYDER24.id?'selected':''}>Spyder Checkr 24</option><option value="custom" ${w.chart.id==='custom'?'selected':''}>${w.chart.id==='custom'?esc(w.chart.name):'Custom chart · import reference'}</option></select></label>
     <p class="cal-caption">Default: Calibrite ColorChecker Classic · 24 patches. Match your physical chart, or import a custom reference below.</p>
     ${sourceControls()}
-    <div class="cal-actions">${button('Try sample photo','sample',w.loading)}</div>
     <details class="cal-details"><summary>Chart layout & custom reference</summary><p>Reference order: left to right, then top to bottom. Rotate the photo to match this layout. Mark the centers of the four corner patches.</p><div class="color-reference-grid" style="grid-template-columns:repeat(${w.chart.columns},1fr)">${w.chart.patches.map((rgb,i)=>`<span style="background:rgb(${rgb.join(',')})" title="Patch ${i+1}: ${rgb.join(', ')}"><small>${i+1}</small></span>`).join('')}</div><p>${esc(w.chart.name)} · ${w.chart.columns} columns × ${w.chart.rows} rows. ${w.chart.id===CLASSIC24.id?`<a href="${CLASSIC24.source}" target="_blank" rel="noreferrer">Classic reference data</a> · post-November 2014, converted to sRGB.`:w.chart.id===SPYDER24.id?`<a href="${SPYDER24.source}" target="_blank" rel="noreferrer">Datacolor reference data</a>`:'User-supplied sRGB values.'}</p>${upload('Import reference JSON','color-reference','.json',w.loading)}<div class="cal-actions">${button('Download reference template','reference-template')}</div><p>The template contains example values. Replace them with verified values for your chart; a printed copy is not a calibrated target.</p></details>
-  </section><section class="work-section"><div class="section-title"><span class="section-number">2</span><div><h2>Find chart & calibrate</h2><p>${ready?'Automatic detection locates and orients the patch grid.':'Capture a camera frame, upload a photo, or try the sample.'}</p></div></div>
+  </section><section class="work-section"><div class="section-title"><span class="section-number">2</span><div><h2>Find chart & calibrate</h2><p>${ready?'Automatic detection locates and orients the patch grid.':'Capture a camera frame or upload a chart photo.'}</p></div></div>
     ${ready?`<div class="color-align-wrap"><canvas id="color-alignment" tabindex="0" role="img" aria-label="Chart alignment. In manual mode click corner patch centers or use arrow keys and Enter. Top left, top right, bottom right, bottom left."></canvas></div><p id="color-corner-status" class="cal-caption">${alignmentMessage()}</p>${w.alignment==='manual'?`<div class="color-corner-progress" aria-label="Corner selection">${['Top left','Top right','Bottom right','Bottom left'].map((n,i)=>`<span class="${i<w.corners.length?'complete':''}">${i<w.corners.length?'✓':i+1} ${n}</span>`).join('')}</div>`:''}<div class="cal-actions">${button(w.loading?'Working…':'Auto-calibrate','solve',w.loading,true)}${button('Manual alignment','align',w.loading)}${w.alignment==='manual'?button('Calibrate from points','solve-manual',w.corners.length!==4||w.loading):''}${button('Rotate photo ↻','rotate',w.loading)}</div>`:'<div class="cal-empty">'+icon('target',28)+'<p>The detected chart and sampling points will appear here.</p></div>'}
     ${patchChecks()}
     <p class="cal-caption">Show one complete, matching chart with clear gaps between patches. Check that the sampling boxes sit inside each color patch. For camera calibration, photograph the physical chart under your capture lighting; a product listing image can only test the workflow.</p>
   </section></div>
   <div class="color-main"><section class="work-section color-preview-section"><div class="section-heading"><div class="section-title"><span class="section-number">3</span><div><h2>Before / after</h2><p>${ready?esc(w.source):'Your color preview will appear here.'}</p></div></div></div>
-    ${ready?`<div class="color-comparison" style="aspect-ratio:${w.image.width}/${w.image.height}"><canvas id="color-before" aria-label="Original photo"></canvas><canvas id="color-after" aria-label="Corrected photo" style="clip-path:inset(0 0 0 ${w.split}%)"></canvas><span class="color-image-label original">Original</span><span class="color-image-label corrected">${fit?'Corrected + adjustments':'Manual preview'}</span><span id="color-divider" style="left:${w.split}%"></span></div><label class="color-comparison-control">Comparison <input id="color-split" type="range" min="0" max="100" value="${w.split}" aria-label="Before after split"><span>Same frame, two treatments</span></label>`:`<div class="color-preview-empty">${icon('aperture',48)}<h3>One leader. One reference frame.</h3><p>Choose a leader above, then Capture leader & apply to all. Load a saved run preset below to reuse its frame and adjustments.</p>${button('Try sample photo','sample',w.loading,true)}</div>`}
+    ${ready?`<div class="color-comparison" style="aspect-ratio:${w.image.width}/${w.image.height}"><canvas id="color-before" aria-label="Original photo"></canvas><canvas id="color-after" aria-label="Corrected photo" style="clip-path:inset(0 0 0 ${w.split}%)"></canvas><span class="color-image-label original">Original</span><span class="color-image-label corrected">${fit?'Corrected + adjustments':'Manual preview'}</span><span id="color-divider" style="left:${w.split}%"></span></div><label class="color-comparison-control">Comparison <input id="color-split" type="range" min="0" max="100" value="${w.split}" aria-label="Before after split"><span>Same frame, two treatments</span></label>`:`<div class="color-preview-empty">${icon('aperture',48)}<h3>One leader. One reference frame.</h3><p>Choose a leader above, then Capture leader & apply to all. Load a saved run preset below to reuse its frame and adjustments.</p></div>`}
     <div class="color-fit-stats"><div><span>Usable chart patches</span><strong>${quality.total?`${quality.usable} / ${quality.total}`:fit?`${fit.accepted} / ${fit.total}`:'—'}</strong></div><div><span>Before fit · RGB error</span><strong>${fit?number(fit.before):'—'}</strong></div><div><span>After fit · RGB error</span><strong>${fit?number(fit.after):'—'}</strong></div></div>
     <p class="cal-caption">${fit?'Error is RGB RMSE (0–255) on the fitted chart, before manual adjustments. It is not an independent accuracy test.':'Calibrate to compare measured patch error. Manual adjustments work as soon as a photo is loaded.'}</p>
     <div id="color-status" class="color-status" role="status" aria-live="polite">${esc(w.message||'Ready when you are.')}</div>
@@ -162,7 +160,7 @@ function markup() {
   </section></div></div>
   <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">5</span><div><h2>Saved run presets</h2><p>Reuse a preset for the same rig and lighting, or choose a leader and recalibrate. The last active preset is restored on reload. Up to 12 presets are kept; export a portable copy for your run records.</p></div></div></div>
     ${leaderState.presets.length?`<div class="color-profile-list">${leaderState.presets.slice().reverse().map(p=>`<article><div><span class="pill ${p.id===leaderState.activeId?'success':'neutral'}">${p.id===leaderState.activeId?'Selected shared preset':'Saved run preset'}</span><h3>${esc(p.name)}</h3><p>Leader: ${esc(p.camera)} · ${new Date(p.application.appliedAt).toLocaleString()}</p></div><div class="cal-actions">${button('Load preset & frame',`load-preset:${p.id}`,w.loading)}${button('Export preset',`export-preset:${p.id}`,w.loading)}${button('Remove preset',`remove-preset:${p.id}`,w.loading)}</div></article>`).join('')}</div>`:'<div class="cal-empty"><p>No leader preset saved yet. Choose a camera and capture the chart once.</p></div>'}
-    ${w.profiles.length?`<details class="cal-details"><summary>Image profile copies</summary><div class="color-profile-list">${w.profiles.slice().reverse().map(p=>`<article><div><span class="pill ${p.sample?'neutral':'success'}">${p.sample?'Sample image profile':'Image-space profile'}</span><h3>${esc(p.name)}</h3><p>${esc(p.camera)} · ${esc(p.chart.name)} · ${new Date(p.createdAt).toLocaleString()}</p></div>${button('Export JSON',`export:${p.id}`)}</article>`).join('')}</div></details>`:''}
+    ${w.profiles.length?`<details class="cal-details"><summary>Image profile copies</summary><div class="color-profile-list">${w.profiles.slice().reverse().map(p=>`<article><div><span class="pill neutral">Image-space profile</span><h3>${esc(p.name)}</h3><p>${esc(p.camera)} · ${esc(p.chart.name)} · ${new Date(p.createdAt).toLocaleString()}</p></div>${button('Export JSON',`export:${p.id}`)}</article>`).join('')}</div></details>`:''}
   </section>`;
 }
 
@@ -174,25 +172,6 @@ function alignmentMessage() {
   if(w.corners.length===4)return 'Four corners set. Check the green sampling boxes, then choose Calibrate from points.';
   const label=(cornerNames[w.chart.id]||['top-left','top-right','bottom-right','bottom-left'])[w.corners.length];
   return `Click the ${label} patch center (${w.corners.length+1}/4). Keyboard: arrows move the crosshair; Enter selects.`;
-}
-
-function makeSample() {
-  const canvas=document.createElement('canvas');canvas.width=900;canvas.height=620;
-  const c=canvas.getContext('2d',{colorSpace:'srgb'});
-  c.fillStyle='#c8ceca';c.fillRect(0,0,900,620);
-  c.fillStyle='#b0b8b2';c.fillRect(0,430,900,190);
-  const cell=Math.min(460/w.chart.columns,420/w.chart.rows),gap=cell*.12,x=60,y=75;
-  c.fillStyle='#202723';c.fillRect(x-16,y-16,cell*w.chart.columns+32,cell*w.chart.rows+32);
-  w.chart.patches.forEach((rgb,i)=>{c.fillStyle=`rgb(${rgb.join(',')})`;c.fillRect(x+(i%w.chart.columns)*cell+gap/2,y+Math.floor(i/w.chart.columns)*cell+gap/2,cell-gap,cell-gap);});
-  c.fillStyle='#f4f2ed';c.fillRect(570,120,270,210);
-  c.fillStyle='#5e8272';c.fillRect(590,140,230,170);
-  c.fillStyle='#c88855';c.beginPath();c.arc(655,405,74,0,Math.PI*2);c.fill();
-  c.fillStyle='#577998';c.fillRect(745,340,95,170);
-  c.fillStyle='#ddd9cf';c.fillRect(555,500,300,24);
-  const image=c.getImageData(0,0,900,620);
-  const cast=[[0.79,0.045,0.01],[0.01,0.68,0.01],[0.015,0.02,0.55]];
-  image.data.set(correctedPixels(image,cast,defaultAdjustments()));
-  return {image};
 }
 
 function clearFit() {w.fit=null;w.samples=[];w.detection=null;w.adjust=defaultAdjustments();previewPixels=null;}
@@ -252,7 +231,7 @@ async function rigStatus() {
   const status=await response.json();w.rig=status;
   const phones=availableColorCameras(status);
   if(!phones.some(p=>p.id===w.rigId))w.rigId='';
-  w.rigMessage=status.connected?`${phones.length} live preview${phones.length===1?'':'s'} available.`:'Original rig server unavailable. Start it on the lab computer, or choose This device’s camera.';
+  w.rigMessage=status.connected?`${phones.length} live preview${phones.length===1?'':'s'} available.`:'Rig status unavailable. Check the local server, or choose This device’s camera.';
   return status;
 }
 
@@ -278,7 +257,7 @@ async function calibrate(root,{capture=false,manual=false}={}) {
     clearFit();
     if(!manual){w.corners=[];w.alignment='auto';const detection=await findChart(w.image,w.chart);if(generation!==viewGeneration)return;w.detection=detection;w.corners=detection.corners;}
     w.samples=sampleChart(w.image,w.chart,w.corners);w.fit=fitColor(w.samples);previewPixels=null;
-    w.message=`${manual?'Aligned chart':`Chart detected (${w.detection.matched}/${w.detection.total} positions)`}. ${w.sample?'Sample correction':'Image correction'} calculated from ${w.fit.accepted} patches. Review the same-frame comparison before saving. ${w.fit.after>12?'High residual error: review lighting and alignment.':''}`;
+    w.message=`${manual?'Aligned chart':`Chart detected (${w.detection.matched}/${w.detection.total} positions)`}. Image correction calculated from ${w.fit.accepted} patches. Review the same-frame comparison before saving. ${w.fit.after>12?'High residual error: review lighting and alignment.':''}`;
     if(capture&&w.captureMeta?.kind==='rig-video'){await applyCurrentProfile();}
   }catch(error){if(generation===viewGeneration)w.message=`${error.message}${capture&&activeLeaderPreset()?' The existing shared preset has not been replaced.':''}`;}
   finally{if(generation===viewGeneration){w.loading=false;redraw(root);}}
@@ -322,8 +301,6 @@ async function command(action,root) {
     } else if(action.startsWith('remove-preset:')){const id=action.slice(14);leaderState=removeLeaderPreset(localStorage,id);if(w.editingPresetId===id)w.editingPresetId=null;w.message='Preset removed. Exported copies are unchanged.';
     } else if(action.startsWith('load-preset:')){await loadPreset(action.slice(12),root);return;
     } else if(action==='apply'||action==='save-run') {w.loading=true;redraw(root);await applyCurrentProfile({newPreset:action==='save-run'});if(generation!==viewGeneration)return;w.loading=false;
-    } else if(action==='sample') {
-      const sample=makeSample();w.image=sample.image;w.corners=[];w.source=`Synthetic ${w.chart.name} scene · warm color cast`;w.sample=true;w.captureMeta=null;w.editingPresetId=null;w.alignment='auto';clearFit();w.message='Sample loaded without corner coordinates. Press Auto-calibrate to find the chart and correct its colors.';
     } else if(action==='align') {w.corners=[];w.alignment='manual';clearFit();w.message='Manual fallback: mark the corner patch centers in the reference order, then Calibrate from points.';
     } else if(action==='rotate'&&w.image) {
       const source=document.createElement('canvas');source.width=w.image.width;source.height=w.image.height;source.getContext('2d').putImageData(w.image,0,0);
@@ -360,7 +337,7 @@ export function mountColorWorkbench(root) {
   if(!overview)overview=new ColorCameraOverview(id=>command(`inspect:${id}`,activeRoot));
   refreshBindings();
   if(!pollTimer){pollTimer=setInterval(pollCameras,5000);pollCameras();}
-  if(!w.loaded){w.loaded=true;try{const profiles=JSON.parse(localStorage.getItem(STORAGE)||'[]');if(Array.isArray(profiles))w.profiles=profiles.filter(p=>p.version===1&&typeof p.id==='string'&&typeof p.name==='string'&&p.chart?.name&&p.fit?.matrix).slice(-20);}catch{w.message='Saved profiles could not be read. New work can still be exported.';}}
+  if(!w.loaded){w.loaded=true;try{const profiles=JSON.parse(localStorage.getItem(STORAGE)||'[]');if(Array.isArray(profiles))w.profiles=profiles.filter(p=>p.sample===false&&p.version===1&&typeof p.id==='string'&&typeof p.name==='string'&&p.chart?.name&&p.fit?.matrix).slice(-20);}catch{w.message='Saved profiles could not be read. New work can still be exported.';}}
   redraw(root);
   root.onclick=event=>{
     const control=event.target.closest('[data-color-action]');if(control&&!control.disabled)command(control.dataset.colorAction,root);

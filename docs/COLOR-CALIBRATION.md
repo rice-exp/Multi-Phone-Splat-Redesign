@@ -1,6 +1,6 @@
-# Leader color calibration prototype
+# Leader color calibration
 
-Open `http://127.0.0.1:4317/?demo=1&calibration=color#calibration`. Color calibration is the fourth screen in Calibration. Unlike the geometry walkthrough, its image processing is computed from pixels. It does not command phones or modify captured files.
+Open `http://127.0.0.1:4317/calibration`. Color calibration computes corrections from actual camera frames or uploaded photos. It does not command phones or modify captured files. Geometry acquisition and solving are not connected yet.
 
 ## Calibrate one leader, share across the rig
 
@@ -14,16 +14,11 @@ This is the requested convenience mode: the leader is calibrated against the cha
 
 The application scope is **browser previews in the Calibration tab**, not phone settings, Prepare rig previews, recordings, full-resolution capture files, or reconstruction input. Run presets are reusable local presets, not yet attachments to real backend capture jobs. The original capture pipeline remains unchanged.
 
-## Try it
-
-1. Choose **Try sample photo**. The generated chart and scene have a deliberate, known color cast. The detector receives only pixels and the reference chart; the generator supplies no corner locations.
-2. Press **Auto-calibrate**. It finds the patch grid, checks reference color agreement, computes the correction, and displays sampling boxes. Inspect those boxes, the split preview and fitted chart error.
-3. Adjust correction strength, exposure, warmth, tint and saturation. Reset preserves the fitted matrix and clears only manual adjustments.
-4. Give the profile a camera/lens identity and lighting name. Save it in browser storage, export JSON, or download the corrected preview PNG.
+## Choose the reference chart
 
 **Calibrite ColorChecker Classic** is the default chart: 24 patches in 6 columns × 4 rows, with dark skin at top left and the white-to-black neutral row at the bottom. Spyder Checkr 24 remains an alternative. Choose **Custom chart · import reference** or open **Chart layout & custom reference** to upload a custom JSON reference. The downloadable template follows the selected chart's dimensions; replace its example values with the actual target's verified values. Printing the template does not create a calibrated target.
 
-All new calibrations use the standard 3 × 3 color correction matrix. There is no correction-model selector or filtered sample. **Try sample photo** generates a scene with the currently selected chart and a warm color cast. Before/after comparison, manual alignment, adjustments and saving remain available.
+All new calibrations use the standard 3 × 3 color correction matrix. Before/after comparison, manual alignment, adjustments and saving operate on the actual source image. There is no sample image generator in the website.
 
 ## Capture from a camera (no upload required)
 
@@ -32,7 +27,7 @@ Choose a reference source:
 - **Rig camera:** start that phone's wireless preview in Prepare rig. Refresh cameras in Color calibration, select a real camera from the backend inventory, and connect its preview. This reuses the existing receive-only MediaMTX/WHEP player; it does not start or reconfigure phones. Only fresh, responding, preview-ready cameras appear. Capture rechecks the selected source against the backend.
 - **This device's camera:** connect a USB/web camera or use the device browser camera. Permission is requested only on Connect; audio is always disabled. Browser camera access requires localhost or HTTPS (ordinary private-LAN HTTP is not sufficient). Browser/device compatibility varies.
 
-For a rig leader press **Capture leader & apply to all**. For a local device test press **Capture & calibrate**. The browser waits for a new decoded video frame, freezes it, detects the chart and computes its correction. Before and after are two treatments of **the same frame**. It does not take two separate exposures or command a full-resolution phone still. Rig previews receive continuous local correction after successful leader calibration; local-device/upload/sample work remains an image-only comparison and cannot silently become the rig's shared preset. Capture frames share the 1000 × 750 maximum preview size with uploads. A stalled/disconnected source fails instead of silently reusing an old frame.
+For a rig leader press **Capture leader & apply to all**. For a local device test press **Capture & calibrate**. The browser waits for a new decoded video frame, freezes it, detects the chart and computes its correction. Before and after are two treatments of **the same frame**. It does not take two separate exposures or command a full-resolution phone still. Rig previews receive continuous local correction after successful leader calibration; local-device/upload work remains an image-only comparison and cannot silently become the rig's shared preset. Capture frames share the 1000 × 750 maximum preview size with uploads. A stalled/disconnected source fails instead of silently reusing an old frame.
 
 The current image remains visible if detection fails, with retry/manual guidance. Changing leader clears the working reference but leaves an existing shared preset intact until a replacement succeeds. Disconnect releases the selected camera; leaving the Color tab or closing the page also releases overview streams and render callbacks. Delayed permission responses cannot reopen a closed camera. Calibration freezes only its reference image; the source video can keep playing while adjustments are edited.
 
@@ -74,13 +69,13 @@ Spyder reference: [Datacolor V2 patch data](https://www.datacolor.com/spyder/dow
 
 `public/js/color-workbench.js` owns the working image and UI. `color-profiles.js` persists up to 12 named leader presets plus an active ID under `splat-color-leader-presets-v1` in localStorage. Each preset contains the matrix, adjustments, chart, immutable leader identity/settings, source metadata, fit results, and a JPEG reference frame resized to at most 640 × 480. Applying manual adjustments updates the edited preset; saving as a new run creates a separate ID. Storage failure is surfaced before reporting a successful application. JSON exports include the reference frame. These presets remain local to this browser/origin and are not synced to the rig server. Unsaved edits are lost on reload.
 
-Legacy image-only snapshots (including samples/uploads) remain separate under `splat-color-profiles-v1`, with up to 20 copies. They are never automatically promoted to shared presets.
+Legacy image-only snapshots from actual camera frames or uploads remain separate under `splat-color-profiles-v1`, with up to 20 copies. They are never automatically promoted to shared presets. Old synthetic snapshots are excluded from the preset list.
 
 `color-camera-overview.js` presents real inventory/streams, explicit leader selection, and leader/follower labels. `color-live-preview.js` renders the same correction on every displayed follower and the selected rig view, at up to roughly six frames per second and 480 × 360 pixels. It always reads the original video, never a corrected canvas. New calibration frames therefore cannot double-apply an existing correction. Original/corrected switching, stale/unavailable video and cleanup retain the unmodified source stream.
 
 Status is checked every five seconds. Shared presets require the same rig backend and saved leader identity. Reported changes to the leader's lens/exposure/color settings pause reuse until recalibration; stale or unavailable inventory also suspends rendering. A temporarily offline leader can leave a saved preset in use on responding followers. Followers intentionally do not need the same identity or reported settings as the leader. Changes in physical lighting, unreported settings and automatic processing drift cannot be detected reliably; the operator must reassess the preset.
 
-Exports include camera/lens label, lighting/profile name, chart reference, source filename and preview dimensions, corners, detection metadata, matrix, fit statistics and manual adjustments. Camera captures also record source type, camera identity, capture time, video dimensions and available reported settings (not verified sensor measurements). Synthetic examples have `sample: true`. Every export declares `pipeline: "decoded-sRGB-image"` and `appliedToHardware: false`.
+Exports include camera/lens label, lighting/profile name, chart reference, source filename and preview dimensions, corners, detection metadata, matrix, fit statistics and manual adjustments. Camera captures also record source type, camera identity, capture time, video dimensions and available reported settings (not verified sensor measurements). Profiles marked `sample: true` are not available in the current interface. Every export declares `pipeline: "decoded-sRGB-image"` and `appliedToHardware: false`.
 
 Do **not** send this image-space matrix directly to Android's sensor-space color transform. The original CameraScope color controls and the new adapter need a verified integration contract and readback. Remaining work: validate the chosen physical chart and deployed rig; trigger full-resolution reference stills if required; lock camera processing settings; apply the profile consistently to final image processing; validate on an independent capture; preserve originals. A live video preview and still/YUV capture must be checked for compatible color processing before sharing a profile.
 
@@ -88,11 +83,9 @@ Do **not** send this image-space matrix directly to Android's sensor-space color
 
 `test/color-calibration.test.js` verifies correction math and sampling. `test/color-chart-detection.test.js` covers rotation, perspective, noise, unknown positions and rejection of absent/wrong/ambiguous charts. `test/color-camera.test.js` covers source freshness, new-frame waiting, stall/abort failures, camera identities, permission rejection/races, and track/peer cleanup. `test/color-leader-presets.test.js` covers shared scope, follower independence, persistence, settings changes, rejection and storage errors. `test/color-live-preview.test.js` checks source pixels, toggling, cleanup and rendering failure.
 
-The full suite passes 76 tests. Regressions cover the Classic 6 × 4 layout under rotation, perspective and noise; custom reference import/detection; recovering a known color cast on independent scene colors; standard-only fitting; validation failures; and compatibility with existing saved presets. These are synthetic tests, not physical-chart accuracy measurements.
+Run `npm test` for the current suite. Regressions cover the Classic 6 × 4 layout under rotation, perspective and noise; custom reference import/detection; recovering a known color cast on independent scene colors; standard-only fitting; validation failures; and compatibility with existing saved presets. These are synthetic tests, not physical-chart accuracy measurements.
 
-Chrome UI verification confirms Classic is selected on a fresh load, the model selector and filtered sample are absent, and the custom reference JSON control remains available. The generated Classic sample detects all 24 positions and accepts all 24 patches; RGB error falls from 21.9 to 0.4 with withheld-patch error 0.4.
-
-![Classic reference layout and retained custom JSON upload](screenshots/color-classic-reference-qa.jpg)
+Synthetic sources below are test fixtures only; the website has no sample-photo controls.
 
 Patch-diagnostic regression: uploading `docs/screenshots/synthetic-clipped-chart-qa.png` and marking the four corner centers reproduces 10 usable patches: the first 14 have a clipped red channel. The solve remains blocked, saving/application stays disabled, and all rejection reasons remain visible. This fixture tests rejection behavior only; it is not a reference chart or a reconstruction of the user's photo.
 

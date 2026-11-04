@@ -23,7 +23,7 @@ export class ColorCameraOverview {
     const visible=all.slice(this.page*4,this.page*4+4),ids=new Set(visible.map(p=>p.id));
     for(const [id,entry] of this.entries)if(!ids.has(id)){entry.color?.close();entry.player?.close();entry.card.remove();this.entries.delete(id);}
     if(!this.grid){this.element.innerHTML='<div class="color-camera-grid"></div><div class="color-camera-pagination"></div>';this.grid=this.element.querySelector('.color-camera-grid');}
-    this.element.querySelector('.color-camera-pagination').innerHTML=all.length?`<span>${all.length} cameras · showing ${this.page*4+1}–${Math.min(all.length,this.page*4+4)}</span>${all.length>4?`<button class="button secondary small" data-camera-page="-1" ${this.page===0?'disabled':''}>Previous</button><button class="button secondary small" data-camera-page="1" ${(this.page+1)*4>=all.length?'disabled':''}>Next</button>`:''}`:'<p class="cal-caption">Refresh cameras to load the rig. No cameras are invented when the rig is offline.</p>';
+    this.element.querySelector('.color-camera-pagination').innerHTML=all.length?`<span>${all.length} cameras · showing ${this.page*4+1}–${Math.min(all.length,this.page*4+4)}</span>${all.length>4?`<button class="button secondary small" data-camera-page="-1" ${this.page===0?'disabled':''}>Previous</button><button class="button secondary small" data-camera-page="1" ${(this.page+1)*4>=all.length?'disabled':''}>Next</button>`:''}`:`<p class="cal-caption">${status?.connected?'No phones configured. Add phone addresses in Prepare rig.':'Camera inventory unavailable. Refresh cameras to check the connection.'}</p>`;
     for(const phone of visible) {
       let entry=this.entries.get(phone.id);
       if(!entry){

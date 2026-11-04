@@ -2,26 +2,46 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {pipeline} from 'node:stream/promises';
+import {FrameReview} from './lib/frame-review.mjs';
 import {RigService,privateAddress} from './lib/rig-service.mjs';
 import {RigConfigStore} from './lib/rig-config.mjs';
 import {MediaGateway} from './lib/gateway.mjs';
 const configStore=new RigConfigStore(),gateway=new MediaGateway();
 const rig=new RigService({configStore,gateway});
+const review=new FrameReview({configStore});
 try {
   const config=await configStore.initialize();
-  if(process.env.RIG_GATEWAY_AUTOSTART!=='0')await gateway.start(config);
+  if(config.phones.length&&process.env.RIG_GATEWAY_AUTOSTART!=='0')await gateway.start(config);
 } catch(error) { console.error(`Rig setup: ${error.message}`); }
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
 const args=Object.fromEntries(process.argv.slice(2).map(a=>a.replace(/^--/,'').split('=')));
 const host=args.host||process.env.HOST||'127.0.0.1';
 const port=Number(args.port||process.env.PORT||4317);
-let participant={phase:'idle',sessionName:'Waiting for a session',remaining:0,simulation:true,updatedAt:Date.now()};
+const participant={available:false,phase:null,sessionName:null,remaining:null,updatedAt:null};
 const clients=new Set();
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
-const broadcast=()=>{for(const res of clients)res.write(`data: ${JSON.stringify(participant)}\n\n`);};
 const server=http.createServer(async(req,res)=>{
   try {
     const url=new URL(req.url,'http://localhost');
+    if(url.pathname.startsWith('/api/review/')) {
+      const requestHost=new URL(`http://${req.headers.host}`).hostname;
+      if(requestHost!=='localhost'&&!privateAddress(requestHost))return json(res,403,{error:'Use localhost or the computer’s private IPv4 address.'});
+      if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{error:'Same-origin requests only'});
+      if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:'Frame review is read-only.'});
+      if(url.pathname==='/api/review/sessions')return json(res,200,await review.list());
+      const session=url.searchParams.get('session');
+      if(url.pathname==='/api/review/session')return json(res,200,await review.session(session));
+      if(!['/api/review/frame','/api/review/image'].includes(url.pathname))return json(res,404,{error:'Not found'});
+      const indexText=url.searchParams.get('index');
+      if(!/^\d+$/.test(indexText||'')||!Number.isSafeInteger(Number(indexText)))return json(res,400,{error:'Choose a valid sequence index.'});
+      const index=Number(indexText),revision=url.searchParams.get('revision');
+      if(url.pathname==='/api/review/frame')return json(res,200,await review.frame(session,index,revision));
+      const {handle,type}=await review.image(session,index,url.searchParams.get('camera'),revision);
+      res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'});
+      if(req.method==='HEAD'){await handle.close();res.end();return;}
+      await pipeline(handle.createReadStream(),res);return;
+    }
     if(url.pathname.startsWith('/api/rig/')) {
       const requestHost=new URL(`http://${req.headers.host}`).hostname;
       if(requestHost!=='localhost'&&!privateAddress(requestHost))return json(res,403,{error:'Use localhost or the computer’s private IPv4 address.'});
@@ -48,29 +68,23 @@ const server=http.createServer(async(req,res)=>{
       req.on('close',()=>{clients.delete(res);clearInterval(heartbeat);});return;
     }
     if(url.pathname==='/api/participant/state'&&req.method==='POST') {
-      // UI-only state relay; never invokes a device, shell command, or capture API.
-      // Same-origin writes prevent other websites from changing the participant display.
+      // The capture job must become the authority for this display. Retired
+      // browser simulations may not publish an invented countdown/completion.
       if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{error:'Same-origin requests only'});
-      let body='';
-      for await(const chunk of req){body+=chunk;if(body.length>8192)return json(res,413,{error:'Request too large'});}
-      const value=JSON.parse(body);
-      const phases=['idle','preparing','capturing','done','cancelled','interrupted'];
-      if(!phases.includes(value.phase))return json(res,400,{error:'Invalid display phase'});
-      participant={phase:value.phase,sessionName:String(value.sessionName||'Untitled session').slice(0,120),remaining:Math.max(0,Math.min(600,Number(value.remaining)||0)),simulation:true,updatedAt:Date.now()};
-      broadcast();return json(res,200,{ok:true,displays:clients.size});
+      return json(res,501,{error:'Capture status is not connected. Browser-generated capture cues are disabled.',code:'CAPTURE_NOT_CONNECTED'});
     }
-    if(url.pathname==='/api/demo-status')return json(res,200,{mode:'simulation',displays:clients.size});
+    if(url.pathname==='/api/demo-status')return json(res,410,{error:'The preview interface has been removed.'});
     if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:'Method not allowed'});
-    const requested=decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname);
+    const requested=decodeURIComponent(['/', '/frames','/calibration','/capture','/reconstruction','/splats'].includes(url.pathname)?'/index.html':url.pathname);
     const file=path.resolve(root,`.${requested}`);
     if(file!==root&&!file.startsWith(root+path.sep))return json(res,403,{error:'Forbidden'});
     const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.json':'application/json'};
     const bytes=await readFile(file);
     res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'});
     res.end(req.method==='HEAD'?undefined:bytes);
-  }catch(error){json(res,error.status||(error.code==='ENOENT'?404:error instanceof SyntaxError?400:500),{error:error.code==='ENOENT'?'Not found':error.message,code:error.code,next:error.next});}
+  }catch(error){if(res.headersSent){res.destroy();return;}json(res,error.status||(error.code==='ENOENT'?404:error instanceof SyntaxError?400:500),{error:error.code==='ENOENT'?'Not found':error.message,code:error.code,next:error.next});}
 });
-server.listen(port,host,()=>console.log(`Rice Experiential Pixels Lab: http://${host}:${port}\nLocal rig configuration: ${configStore.file}\nUI demo: http://${host}:${port}/?demo=1\nParticipant display (demo capture only): http://${host}:${port}/participant.html`));
+server.listen(port,host,()=>console.log(`Rice Experiential Pixels Lab: http://${host}:${port}\nLocal rig configuration: ${configStore.file}\nFrame review: http://${host}:${port}/frames\nParticipant display: http://${host}:${port}/participant.html`));
 server.on('error',error=>{console.error(error.message);process.exitCode=1;});
 let closing=false;
 const close=async()=>{if(closing)return;closing=true;for(const res of clients)res.end();await gateway.stop().catch(error=>console.error(error.message));server.close(()=>process.exit(0));server.closeAllConnections();};

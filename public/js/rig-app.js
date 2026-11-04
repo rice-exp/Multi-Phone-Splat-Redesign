@@ -1,5 +1,5 @@
 import {icon,esc} from './icons.js';
-import {STEPS} from './model.js';
+import {workflowNavigation,centerWorkflow} from './workflow.js';
 import {observedPhones,selectionFor,colorStatus,configurationStatus} from './rig-model.js';
 import {LivePreview,previewEndpoint} from './live-preview.js';
 import {verificationMessage,settingValue} from './settings-readback.js';
@@ -34,8 +34,8 @@ function persistSelection(){try{localStorage.setItem('rig-selection-v1',JSON.str
 function renderShell(){
   app.innerHTML=`<a class="skip-link" href="#workspace">Skip to workspace</a><aside class="sidebar">
     <a class="brand" href="/">${icon('aperture',30)}<div><span>Rice Experiential Pixels Lab</span><small>CAPTURE WORKSPACE</small></div></a>
-    <div class="sidebar-label">WORKFLOW</div><nav class="step-nav" aria-label="Capture workflow">${STEPS.map((step,i)=>i===1?`<a class="nav-step" href="/?demo=1#calibration"><span class="nav-number">02</span><span><b>Calibration</b><small>Explore UI preview</small></span></a>`:`<button class="nav-step ${i===0?'active':''}" ${i===0?'aria-current="step"':'disabled'}><span class="nav-number">${String(i+1).padStart(2,'0')}</span><span><b>${step.name}</b><small>${i===0?'Connect & configure':'Integration pending'}</small></span>${i===0?icon('chevron',15):''}</button>`).join('')}</nav>
-    <div class="sidebar-bottom"><div class="rig-card"><div class="rig-icon">${icon('wifi',22)}</div><div><strong>Lab rig</strong><span>CameraScope · private network</span></div></div><button class="sidebar-action" data-rig-action="setup">${icon('settings',18)} Connection setup</button><a class="sidebar-action" href="/?demo=1">${icon('external',18)} Open UI demo</a></div></aside>
+    <div class="sidebar-label">WORKFLOW</div><nav class="step-nav" aria-label="Capture workflow">${workflowNavigation('prepare')}</nav>
+    <div class="sidebar-bottom"><div class="rig-card"><div class="rig-icon">${icon('wifi',22)}</div><div><strong>Lab rig</strong><span>CameraScope · private network</span></div></div><button class="sidebar-action" data-rig-action="setup">${icon('settings',18)} Connection setup</button><a class="sidebar-action" href="/participant.html" target="participant-display">${icon('monitor',18)} Participant display</a></div></aside>
     <div class="main-shell"><header class="topbar"><div class="breadcrumb">Capture workspace ${icon('chevron',14)} <strong>Prepare rig</strong></div><div class="topbar-tools"><span class="simulation-label rig-live-label">Device connection</span>${button('Connection setup','setup','secondary small')}<button class="icon-button" data-rig-action="logs" aria-label="Open activity log">${icon('log')}</button></div></header>
     <div class="session-bar"><span>Lab rig preparation</span><span id="rig-freshness" role="status">Connecting…</span></div>
     <main id="workspace" tabindex="-1"><div class="page-heading"><div><div class="eyebrow">STEP 01 OF 06</div><h1>Prepare rig</h1><p>Check phone connections, camera settings and clock offsets.</p></div>${button(`${icon('refresh',16)} Refresh status`,'refresh','primary','id="rig-refresh"')}</div>
@@ -48,8 +48,8 @@ function renderShell(){
         <div class="rig-settings-footer"><p id="rig-settings-source">Waiting for the local rig’s saved settings.</p><button class="button secondary" type="submit" id="rig-review-settings">Review changes</button></div></form>
         <p class="rig-caption">Live previews show current output. The review shows values only; it does not alter camera output. Readback verifies CameraScope’s requested settings, not measured sensor output.</p><div id="rig-command-results" aria-live="polite"></div></section>
       <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">3</span><div><h2>Check clock offsets</h2><p>Measure each selected phone’s clock offset relative to the lab computer.</p></div></div>${button('Check clocks','sync','secondary','id="rig-sync"')}</div><p id="rig-sync-summary"></p><p class="rig-caption">Clock results expire after 60 seconds. Sensor phase alignment and capture timing must be checked again when capture is connected.</p></section>
-      <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">4</span><div><h2>Participant display</h2><p>Live capture status will be connected with the Capture tab.</p></div></div>${pill('Integration pending')}</div><p class="rig-caption">The participant display in the UI demo shows simulated capture stages.</p></section>
-      <div class="step-footer"><span class="footer-hint">Preparation does not start a capture.</span><div class="next-action"><small>Calibration screens use sample data.</small><a class="button primary" href="/?demo=1#calibration">Open calibration preview ${icon('arrow',17)}</a></div></div>
+      <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">4</span><div><h2>Participant display</h2><p>Live capture status will be connected with the Capture tab.</p></div></div>${pill('Integration pending')}</div><p class="rig-caption">The participant display stays inactive until capture status is connected.</p></section>
+      <div class="step-footer"><span class="footer-hint">Preparation does not start a capture.</span><div class="next-action"><small>Camera geometry solving is not connected yet.</small><a class="button primary" href="/calibration">Open color calibration ${icon('arrow',17)}</a></div></div>
     </main><footer class="app-footer"><span>Prepare rig · CameraScope integration</span></footer></div>`;
 }
 function updateStatus(){
@@ -63,7 +63,7 @@ function updateStatus(){
   byId('rig-stats').innerHTML=[['PHONES IN RIG',list.length||(!status.connected?'—':0),status.connected?`${responding} responding`:'inventory unavailable',''],['CAMERAS RUNNING',running,unknown?`${unknown} unknown`:`of ${list.length} pipelines`,running&&running===list.length?'text-success':'text-warning'],['SELECTED',chosen.length,'phones',''],['PREVIEW STREAMS',previews,`of ${list.length}`,previews&&previews===list.length?'text-success':'text-warning']].map(([title,n,detail,tone])=>`<div class="stat"><span>${title}</span><strong class="${tone}">${n}<small>${detail}</small></strong></div>`).join('');
   const grid=byId('rig-cameras');
   const existing=new Map([...grid.querySelectorAll('[data-phone-id]')].map(el=>[el.dataset.phoneId,el]));
-  if(!list.length){players.forEach(player=>player.close());players.clear();grid.innerHTML=`<div class="rig-empty">${icon('camera',32)}<h3>${loading?'Loading phone inventory':'No phone inventory available'}</h3><p>${loading?'':'Open Connection setup and check the configured phone IP addresses.'}</p>${button('Connection setup','setup','secondary')}</div>`;}
+  if(!list.length){players.forEach(player=>player.close());players.clear();grid.innerHTML=`<div class="rig-empty">${icon('camera',32)}<h3>${loading?'Loading phone inventory':status.connected?'No phones configured':'Phone inventory unavailable'}</h3><p>${loading?'':'Open Connection setup and check the configured phone IP addresses.'}</p>${button('Connection setup','setup','secondary')}</div>`;}
   else {
     grid.querySelector('.rig-empty')?.remove();
     for(const phone of list){
@@ -195,7 +195,7 @@ const actions={refresh:()=>refresh(true),'select-all':()=>{if(busy||status.busy)
 document.addEventListener('click',event=>{const el=event.target.closest('[data-rig-action]');if(el&&!el.disabled)actions[el.dataset.rigAction]?.(el);});
 document.addEventListener('change',event=>{if(event.target.dataset.phone){selection[event.target.dataset.phone]=event.target.checked;persistSelection();updateStatus();}});
 document.addEventListener('input',event=>{if(event.target.closest('#rig-settings')){settingsDirty=true;byId('rig-settings-source').textContent='Unapplied changes';}if(event.target.id==='rig-log-filter'){const query=event.target.value.toLowerCase();byId('rig-log-events').querySelectorAll('article').forEach(el=>el.hidden=!el.textContent.toLowerCase().includes(query));}});
-renderShell();byId('rig-settings').addEventListener('submit',event=>{event.preventDefault();reviewSettings();});updateStatus();refresh();
+renderShell();centerWorkflow();byId('rig-settings').addEventListener('submit',event=>{event.preventDefault();reviewSettings();});updateStatus();refresh();
 setInterval(()=>{updateStatus();refresh();},5000);
 window.addEventListener('pagehide',()=>{players.forEach(player=>player.close());players.clear();document.querySelectorAll('.rig-camera-preview').forEach(el=>delete el.dataset.path);});
 window.addEventListener('pageshow',()=>updateStatus());

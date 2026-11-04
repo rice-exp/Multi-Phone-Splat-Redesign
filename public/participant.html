@@ -10,9 +10,8 @@
 <body class="participant-body">
   <header class="participant-header"><a href="/">Rice Experiential Pixels Lab</a><span id="connection" class="pill">Connecting…</span><button id="fullscreen" class="button dark-button">Full screen</button></header>
   <main class="participant-main">
-    <div class="eyebrow">SIMULATION</div>
     <h1 id="participant-title">Capture status</h1>
-    <p id="participant-instruction">Stand in the marked area and wait for the operator.</p>
+    <p id="participant-instruction">Wait for the operator. Capture status is not connected.</p>
     <div class="participant-steps" aria-label="Capture stages">
       <section data-participant-stage="preparing"><span class="participant-number">01</span><div><h2>Preparing</h2></div><span class="stage-mark">○</span></section>
       <section data-participant-stage="capturing"><span class="participant-number">02</span><div><h2>Capturing</h2></div><strong id="participant-timer" class="participant-timer">—</strong></section>
@@ -20,7 +19,7 @@
     </div>
     <div id="participant-alert" role="status" aria-live="polite"></div>
   </main>
-  <footer class="participant-footer"><span id="participant-session">Waiting for a session</span></footer>
+  <footer class="participant-footer"><span id="participant-session">No active capture status</span></footer>
   <script type="module" src="/js/participant.js"></script>
 </body>
 </html>

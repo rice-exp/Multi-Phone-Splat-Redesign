@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {initialState,selectedCameras,readiness,captureBlocker,generationBlocker,setAllCameras,toggleCamera,completeReadiness,applySettings,createTake,recoverTransfers,saveState,restoreState,formatTime} from '../public/js/model.js';
+import {initialState,selectedCameras,readiness,captureBlocker,generationBlocker,setAllCameras,toggleCamera,completeReadiness,applySettings,createTake,recoverTransfers,saveState,restoreState,formatTime} from '../archive/prototype/model.js';
 
 test('all phones begin selected, and a selected sync issue blocks capture',()=>{
   const state=initialState();

@@ -1,5 +1,5 @@
 import {calibrationWorkspace} from './calibration-ui.js';
-import {icon,esc} from './icons.js';
+import {icon,esc} from '../../public/js/icons.js';
 import {STEPS,readiness,selectedCameras,cameraIssue,captureBlocker,generationBlocker,formatTime} from './model.js';
 import {studioPreview,settingsFilter} from './preview.js';
 
@@ -89,9 +89,10 @@ export function phaseDescription(c) {
 export function participantIndex(state){return state.capture.status==='running'?(state.capture.phase==='capturing'?1:state.capture.phase==='transferring'?2:0):['complete','warning'].includes(state.capture.status)?2:-1;}
 export function framesView(state,{frameIndex=0}={}) {
   const take=state.take;
-  if(!take)return `${pageHeading('STEP 04 OF 06','Frame review','Compare the same frame across cameras before reconstruction.')}${emptyState('frames','No captured take','Complete a capture to review frames and transfer status.','Go to capture','capture')}`;
+  const savedCaptures='<a class="button secondary" href="/frames">Open saved captures</a>';
+  if(!take)return `${pageHeading('STEP 04 OF 06','Frame review','Compare the same frame across cameras before reconstruction.',savedCaptures)}${emptyState('frames','No captured take','Complete a capture to review frames and transfer status.','Go to capture','capture')}`;
   const cameras=state.cameras.filter(c=>take.cameraIds.includes(c.id));
-  return `${pageHeading('STEP 04 OF 06','Frame review','Compare frames across cameras and check transfer status.',tag('Simulated dataset','neutral'))}
+  return `${pageHeading('STEP 04 OF 06','Frame review','Compare frames across cameras and check transfer status.',savedCaptures)}
   <section class="work-section">${section('1','Check the take','Use the same sequence index across every camera.')}
   <div class="review-stats"><div><span>CAPTURED TAKE</span><strong>${esc(take.name)}</strong></div><div><span>FRAME GROUPS</span><strong>${take.frames}</strong></div><div><span>TRANSFERRED</span><strong>${take.transferred} / ${take.expected}</strong></div><div><span>DROPPED DURING CAPTURE</span><strong>0</strong></div></div>
   ${take.failedTransfers?`<div class="notice warning-notice">${icon('warning',20)}<div><strong>${take.failedTransfers} images still need transfer</strong><p>They were saved during capture. You can retry transfer without recording another take.</p></div>${button('Retry missing transfers','retry-transfer','secondary')}</div>`:''}</section>

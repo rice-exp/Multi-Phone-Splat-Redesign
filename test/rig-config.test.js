@@ -5,7 +5,9 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
-import {RigConfigStore,DEFAULT_CONFIG,migrateConfig,validateConfig,PROJECT_ROOT} from '../lib/rig-config.mjs';
+import {RigConfigStore,migrateConfig,validateConfig,PROJECT_ROOT} from '../lib/rig-config.mjs';
+
+import {TEST_CONFIG as DEFAULT_CONFIG} from '../test-support/rig-config.mjs';
 
 async function storeFor(t) {
   const directory=await mkdtemp(path.join(os.tmpdir(),'splat-config-'));

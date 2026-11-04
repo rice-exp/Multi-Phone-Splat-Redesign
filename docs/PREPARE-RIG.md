@@ -6,24 +6,26 @@ Android code and features are unchanged.
 
 ## Start the redesign
 
-1. Check out `Camerascope-features` and install Node.js 20 or newer.
+1. Check out `feature/frame-review` and install Node.js 20 or newer.
 2. Stop the old webapp and its gateway so their ports are free.
 3. Run `npm start` in the redesign folder. No npm packages need installing.
 4. Open `http://127.0.0.1:4317/`, then **Connection setup**.
-5. Verify the phone IDs/names/IPs, selected-by-default flags, computer destination
+5. Enter or verify the phone IDs/names/IPs, selected-by-default flags, computer destination
    IPv4 address, and saved camera defaults. Save configuration.
 6. Put the computer and phones on the same private Wi-Fi/LAN. Keep CameraScope
    open with its UDP command server enabled on port 5010.
-7. The gateway starts automatically. If stopped or unavailable, use **Start
-   gateway** in Connection setup. Inspect its status/logs there.
+7. With a saved phone inventory, the gateway starts automatically on server startup.
+   After first-time setup, or if it is stopped, use **Start gateway** in Connection
+   setup. Inspect its status/logs there.
 8. Select the intended phones, click **Start selected previews**, and review the
    destination. A stopped phone camera pipeline will be started. Wait for each
    card's **Live** label, which confirms displayed video frames.
 
-The initial configuration copies the old project's eight lab phone identities,
-`192.168.50.101`–`.108`, and destination `192.168.50.10`. These are configured
-addresses, not discovered or simulated devices; change them to match your rig.
-Only valid UDP replies count as responding phones.
+A fresh installation starts with **zero phones** and no computer destination IP.
+Import your existing lab configuration or enter the actual addresses in Connection
+setup. The app does not discover phones automatically. Existing saved configurations
+are preserved; remove any unused entries manually. Only valid UDP replies count
+as responding phones, and only advancing browser frames earn a Live label.
 
 The Windows MediaMTX **v1.18.2** runtime and MIT license are included under
 `tools/mediamtx/`. On Linux/macOS, install the corresponding runtime and set
@@ -135,8 +137,8 @@ another controller concurrently. There is no distributed lock with the old app.
   CameraScope may report that requested interval while its phase report and
   device-override messages show an actual interval near 33.333333 ms (30 FPS).
   Readback success does not override a hardware limit.
-- Calibration, capture, transfer, reconstruction and participant capture status
-  remain integration work. The complete UI simulation remains at `/?demo=1`.
+- Geometry calibration, capture, transfer, reconstruction and participant capture
+  status remain integration work. Their screens do not simulate successful work.
 
 The review dialog shows the requested values before submission. It does not simulate a photographic change. Prepare rig previews continue showing actual output. The [Color calibration screen](COLOR-CALIBRATION.md) lets the operator choose a leader from live previews, capture one chart frame, and share its correction across every preview in that Calibration screen. Named run presets retain the reference frame and manual adjustments locally. Applying that correction to phone settings, final capture files, or a phone-settings trial and restore still needs pipeline integration and verified CameraScope contracts.
 
@@ -150,8 +152,8 @@ missing auto-exposure flag explicitly unverified; it does not contact a phone.
 - Settings readback compares `iso`, `exposureMs`, `frameDurationMs`, `autoExposureEnabled` and `colorProcessing.awbMode`. These are **requested CameraScope state**, not measured sensor exposure, frame timing or image color. Manual settings explicitly disable auto exposure and clear the white balance lock; both states are checked in readback.
 - A ready gateway route does not prove that the operator’s browser decoded a frame. The separate Live label requires displayed frame progress; negotiation errors, stalls and reconnects appear on the affected card. The view is receive-only and never requests camera/microphone access. There are no public STUN dependencies; the browser and gateway must be reachable on the lab LAN.
 - The clock check measures offsets; it does not change phone clocks or persist the original capture cache (`--no-save`). It is not sensor phase alignment or capture readiness. Fresh offsets must be measured and used by the eventual capture preflight.
-- Geometry calibration, synchronized capture, transfer, reconstruction, and the live participant cue still require integration. The design workspace at `/?demo=1` simulates those operations. Its Color calibration screen can use real video frames and local image processing; its selected color source is separate from the demo camera inventory.
-- Operation locks are local to this redesign process. It checks the original `/api/job` status before mutations, but cannot prevent another operator from starting work in the original app afterward. Do not issue commands concurrently from both apps.
+- Geometry calibration, synchronized capture, transfer, reconstruction, and the live participant cue still require integration. Color calibration at `/calibration` uses real video frames or uploaded photos and local image processing.
+- Operation locks are local to this redesign process; it does not query the original app. Do not issue commands concurrently from both apps. Stop the redesign and its gateway before returning to the original capture application.
 - Events and command acknowledgements are held in server memory and reset on restart. Reloading a browser does not restore a green status from local storage.
 
 ## Verification and lab acceptance

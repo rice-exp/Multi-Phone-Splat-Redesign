@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {RigConfigStore,DEFAULT_CONFIG} from '../lib/rig-config.mjs';
+import {RigConfigStore} from '../lib/rig-config.mjs';
+import {TEST_CONFIG as DEFAULT_CONFIG} from '../test-support/rig-config.mjs';
 import {RigService} from '../lib/rig-service.mjs';
 import {routesFor} from '../lib/gateway.mjs';
 

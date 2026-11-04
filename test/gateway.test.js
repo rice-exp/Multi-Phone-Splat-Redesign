@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import dgram from 'node:dgram';
 import {MediaGateway,gatewayConfig,routesFor,checkPorts} from '../lib/gateway.mjs';
-import {DEFAULT_CONFIG} from '../lib/rig-config.mjs';
+import {TEST_CONFIG as DEFAULT_CONFIG} from '../test-support/rig-config.mjs';
 
 test('gateway preserves original H264 RTP routes and keeps its control API loopback-only',()=>{
   const config={...DEFAULT_CONFIG,phones:DEFAULT_CONFIG.phones.slice(0,2)};

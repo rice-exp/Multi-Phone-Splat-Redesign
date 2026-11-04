@@ -2,7 +2,7 @@
 
 ## Current implementation
 
-Native ES modules and plain HTML/CSS follow the original browser/Node structure without a package installation step. `entry.js` loads the real `rig-app.js` by default or the existing `app.js` only at `/?demo=1`. Demo state and device observations are separate. `RigService` lives on the server. Connection setup accepts a validated phone inventory, LAN destination and camera defaults; command endpoints take only configured phone IDs. Executable paths remain local server configuration.
+Native ES modules and plain HTML/CSS follow the original browser/Node structure without a package installation step. `entry.js` uses `workflow.js` to load `rig-app.js` at `/`, `calibration-app.js` at `/calibration`, and `frame-review.js` at `/frames`. Capture, reconstruction and splat-review routes show unavailable states until their backends are connected. Old demo URLs resolve to these current routes; no active module imports the archived simulation. New rig configuration has no phones or computer destination address; saved configurations are preserved. `RigService` lives on the server. Connection setup accepts a validated phone inventory, LAN destination and camera defaults; command endpoints take only configured phone IDs. Executable paths remain local server configuration.
 
 Prepare rig reads `RigConfigStore` and its owned `MediaGateway` directly, queries CameraScope over UDP, applies selected settings/stream controls with readback, and invokes the independently installed CLI for clock checks. No old webapp HTTP endpoints are used. See [setup and exact limits](PREPARE-RIG.md). Status responses contain phones, timestamps, independent preview/response/color/clock observations, errors, and the server event log. UI polling preserves active video elements and form inputs.
 
@@ -24,17 +24,23 @@ Rig writes require same-origin JSON plus `X-Rig-Request: 1`, reject oversized in
 
 `settings-readback.js` shares field comparisons between the server and camera cards. Results contain `verification.status` (`confirmed`, `partial`, `mismatch`, `unavailable`) and each field's expected/reported value and check. `ok:true` with `partial` means the command was acknowledged and all core numeric values matched; missing optional flags remain unknown and `requestedStateConfirmed:false`. Only `confirmed` permits full requested-state confirmation. Missing ISO/exposure/frame interval or any reported mismatch returns `ok:false`. Both successful and mismatched attempts retain their requested target, so camera cards compare against the latest attempted settings instead of silently falling back to saved startup defaults. Future capture readiness must require the verification level it actually needs, not `ok` alone.
 
-The participant display still relays **demo** capture state only:
+The participant display has no connected capture authority yet:
 
 | Endpoint | Contract |
 | --- | --- |
-| `POST /api/participant/state` | Same-origin JSON: `phase`, `sessionName`, `remaining`. Phases: idle, preparing, capturing, done, cancelled, interrupted. Returns connected display count. |
-| `GET /api/participant/events` | SSE with latest state, `simulation: true`, and `updatedAt`. Sends current state immediately on connection. |
-| `GET /api/demo-status` | Simulation mode and connected display count. |
+| `POST /api/participant/state` | Returns 501 `CAPTURE_NOT_CONNECTED`; browser-generated capture cues are rejected. |
+| `GET /api/participant/events` | SSE sends `{available:false, phase:null, sessionName:null, remaining:null, updatedAt:null}`. Heartbeats indicate server connectivity only. |
+| `GET /api/demo-status` | Returns 410; the preview interface has been removed. |
 
-The operator relays status every second. EventSource reconnects automatically; the display clears its active cue on connection loss. Active preparation/capture status becomes stale after five seconds without an operator update. Server state resets on restart. Browser storage preserves completed operator takes/results. Only one operator is supported.
+All participant stages remain inactive. `participant-state.js` also rejects old simulated data, invalid phases, missing timestamps and stale status. Future integration must publish authoritative job state from the server and continuously update timestamps; a connected browser or running camera pipeline is not evidence of an active take.
 
-## Data contracts to preserve
+Color calibration uses real rig/device video or uploaded chart photos. Reference chart values are measurement targets, not generated input images. Local image-only presets marked as samples are excluded; leader presets already require a real rig source. Old simulated capture history and geometry profiles are never loaded by active modules.
+
+## Existing review and future integration contracts
+
+Saved Frame review is independently usable before capture integration. `FrameReview` reads the original `frame-manifest.json` format from the configured output folder and provides read-only `/api/review/sessions`, `/session`, `/frame`, and `/image` routes. Sequence IDs are preserved, image paths are manifest-bound and confined to the session, and old manifest revisions are rejected after changes. `frame-review-model.js` distinguishes capture drops, transfer failures, and ambiguous legacy records, and computes timestamp differences using integer nanoseconds. The browser aborts superseded loads and removes prior images while fetching a new frame. See [the file contract and limits](FRAME-REVIEW.md).
+
+The following capture, geometry, reconstruction and splat-review rules describe future integration requirements, not implemented jobs.
 
 - **Readiness:** connection, sync, and configuration are separate flags. Selection/settings changes invalidate readiness. Empty selections and overlapping work are blocked.
 - **Settings:** edit a separate draft. Apply updates selected cameras only; Discard changes nothing. Background display updates never replace active form inputs.
@@ -42,15 +48,15 @@ The operator relays status every second. EventSource reconnects automatically; t
 - **Capture:** preparing → sync → capturing → transferring → complete/warning. Selected devices and settings are locked during work. Cancel preserves previous completed takes.
 - **Transfer:** saved on phone and transferred to workspace are distinct counters. Retry targets a take ID; it does not create a new capture or label a transfer failure as a dropped sensor frame.
 - **Frames:** compare the same sequence index across cameras. Compute timing from `actualLeaderNs`, not arrival time. Raw span includes deliberate phase stagger; it is not a pass/fail sync score.
-- **Reconstruction:** each run snapshots its take, model, geometry and calibration. A 4D run needs multiple frames. The three-camera minimum is a prototype UI guard, not a validated scientific threshold.
-- **Review:** frame changes preserve viewpoint. Replace the sample renderer behind `mountViewer` when real output is available.
+- **Reconstruction:** each run must snapshot its take, model, geometry and calibration. Validate input requirements against the actual training implementation; archived prototype thresholds are not validated scientific limits.
+- **Splat review:** load actual trained output and preserve the viewpoint across temporal changes. No generated mannequin or sample scene is displayed.
 
 Events have `{id, time, level, message, stage, cameraId, code, resolved, detail?, impact?, takeId?}`. Show observed facts, impact, suggested checks, and raw details separately. A timeout alone does not prove a specific root cause. Real integration should add operation IDs, sequence numbers and durable server storage. Keep user wording separate from command output.
 
 ## Integration order
 
 1. Identify the rig’s deployed revision and record actual API response samples. Reviewed commit `85ad82f` differs from the old `main`.
-2. Define a `RigService` interface for status/events, previews, settings/readback, readiness/sync, capture/cancel, transfer/retry, calibration, datasets, reconstruction and results. Keep a demo service for UI regression reviews. Never put shell commands in browser handlers.
+2. Define a `RigService` interface for status/events, previews, settings/readback, readiness/sync, capture/cancel, transfer/retry, calibration, datasets, reconstruction and results. Keep synthetic fixtures confined to automated tests. Never put shell commands in browser handlers.
 3. Connect **read-only status and previews** first. Map stable device IDs to cards, preserve the original MediaMTX/WebRTC lifecycle, and distinguish connecting/paused/disconnected streams.
 4. Connect settings/readiness. Require acknowledgments from every selected phone and report partial acceptance. A visual preview is not sensor readback.
 5. Connect capture and transfer under server-owned operation IDs and locks. Add timeouts, cancellation, and persisted transfer manifests. Restore previews in a `finally` path even if preparation or synchronization fails.
@@ -60,6 +66,6 @@ Events have `{id, time, level, message, stage, cameraId, code, resolved, detail?
 
 Before deployment, add authentication, authenticated private-network transport, one active operator/operation lock, durable jobs/logs, and server restart recovery.
 
-## Intentional limits in the UI demo
+## Retired prototype
 
-Camera views are generated SVGs; color preview uses CSS filters; calibration profiles contain no measured matrices. Capture timestamps are generated, reconstruction is a timer, and the viewer is a point mannequin rather than Gaussian output. History holds 30 takes and 500 events in per-browser storage with finite quota. Exports contain summaries, not media or importable project backups. Popup policy and physical monitor positioning still require initial display setup. These limits are explicitly visible in the interface.
+`archive/prototype/` keeps the former workflow source and geometry notes outside the web root. Its generated cameras, geometry profiles, capture timestamps, reconstruction timers and point mannequin cannot appear in the running app. Old browser storage can remain in place for historical reference, but the current routes do not read it. Automated tests use explicit fixture inventories rather than production defaults.

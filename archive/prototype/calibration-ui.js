@@ -1,7 +1,7 @@
-import {esc,icon} from './icons.js';
+import {esc,icon} from '../../public/js/icons.js';
 import {studioPreview} from './preview.js';
 import {activeSession,activeProfile,poseBlocker,SOLVE_STAGES} from './calibration-model.js';
-import {colorScreen} from './color-workbench.js';
+import {colorScreen} from '../../public/js/color-workbench.js';
 
 const action=(label,name,disabled=false,primary=false)=>`<button class="button ${primary?'primary':'secondary'}" data-cal-action="${name}" ${disabled?'disabled':''}>${label}</button>`;
 const tabButton=(id,title,detail,current)=>`<button class="cal-tab ${current===id?'active':''}" data-cal-tab="${id}" aria-pressed="${current===id}"><span>${title}</span><small>${detail}</small></button>`;

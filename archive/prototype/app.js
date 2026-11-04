@@ -1,8 +1,8 @@
 import {calibrationAction,tickCalibration,activeSession} from './calibration-model.js';
-import {mountColorWorkbench} from './color-workbench.js';
+import {mountColorWorkbench} from '../../public/js/color-workbench.js';
 import {STEPS,restoreState,saveState,makeEvent,selectedCameras,setAllCameras,toggleCamera,completeReadiness,captureBlocker,generationBlocker,createTake,recoverTransfers,applySettings,formatTime} from './model.js';
 import {shell,VIEW,button,settingsDialog,issueDialog,cameraCard,phaseTitle,phaseDescription,participantIndex} from './views.js';
-import {icon,esc} from './icons.js';
+import {icon,esc} from '../../public/js/icons.js';
 import {settingsFilter} from './preview.js';
 import {mountViewer} from './viewer.js';
 

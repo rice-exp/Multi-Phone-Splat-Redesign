@@ -19,6 +19,70 @@
   font-size:14px;
 }
 
+/* Saved capture review */
+[hidden] { display:none !important; }
+.review-shell .work-section { min-width:0; }
+.review-session-row,.review-transport,.review-view-tools { display:flex;align-items:end;gap:12px;flex-wrap:wrap; }
+.review-session-row>label { flex:1;min-width:220px; }
+.review-source { margin-top:16px;color:var(--muted);font-size:12px; }
+.review-source summary,.review-timing-help summary { cursor:pointer;color:var(--ink); }
+.review-source p { margin-top:10px;overflow-wrap:anywhere;line-height:1.6; }
+.review-summary { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:20px;border-top:1px solid var(--line);padding-top:18px; }
+.review-summary>div { display:flex;flex-direction:column;gap:8px; }
+.review-summary span { color:var(--muted);font-size:12px; }
+.review-summary strong { font-size:25px;font-weight:600; }
+.review-position-label { width:90px; }
+.review-speed-label { margin-left:auto;min-width:150px; }
+.review-timeline-label { margin-top:22px;font-size:12px; }
+#review-scrubber { display:block;width:100%;margin:12px 0; }
+.review-frame-heading { display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px; }
+.review-frame-heading>span { color:var(--muted);font-size:12px; }
+.review-view-tools { align-items:center;margin-bottom:18px; }
+#review-camera-filter { border:0;padding:0;margin:0;display:flex;gap:12px;flex-wrap:wrap;flex:1;min-width:180px; }
+#review-camera-filter legend { font-size:12px;color:var(--muted);margin-bottom:10px; }
+#review-camera-filter label,.review-issues-toggle { flex-direction:row;align-items:center;gap:6px;font-size:12px; }
+.review-view-tools>label { font-size:12px; }
+.review-current-metrics { display:flex;gap:22px;flex-wrap:wrap;padding:14px 0;margin-bottom:16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:12px;color:var(--muted); }
+.review-current-metrics b { color:var(--ink);margin-right:8px; }
+.review-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px; }
+.review-grid>.rig-empty { grid-column:1/-1; }
+.review-card { min-width:0;overflow:hidden; }
+.review-image { display:flex;position:relative;align-items:center;justify-content:center;width:100%;aspect-ratio:4/3;overflow:hidden;padding:0;border:0;border-radius:0;background:#172b28;color:#dce8e1; }
+.review-image:disabled { opacity:1;cursor:default; }
+.review-image img { display:block;width:100%;height:100%;object-fit:contain;transform:rotate(var(--review-rotation,0deg)); }
+.review-image.quarter-turn img { transform:rotate(var(--review-rotation)) scale(.66); }
+.review-image>span { display:flex;align-items:center;flex-direction:column;gap:12px;padding:24px;text-align:center;line-height:1.5; }
+.review-image strong { font-size:14px;font-weight:500; }
+.review-image small { color:#b8c8c0; }
+.review-card-body { padding:16px; }
+.review-card-heading,.review-card-timing,.review-card-footer { display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap; }
+.review-card-heading strong { overflow-wrap:anywhere; }
+.review-card-heading .pill { font-size:11px; }
+.review-card-timing { font-size:12px;margin-top:16px; }
+.review-card-timing span,.review-card-footer>span { color:var(--muted); }
+.review-card-body>p { margin-top:12px;line-height:1.6;font-size:12px; }
+.review-card-footer { margin-top:15px;padding-top:12px;border-top:1px solid var(--line);font-size:12px; }
+.review-timing-help { font-size:12px;color:var(--muted);margin-top:20px;line-height:1.7; }
+.review-timing-help p { margin-top:8px; }
+.app-dialog.review-image-dialog { width:min(1100px,94vw);max-width:1100px; }
+.review-image-tools { display:flex;align-items:center;gap:20px;margin-bottom:12px; }
+.review-image-tools label { width:120px;flex-shrink:0; }
+.review-image-tools span { font-size:12px;color:var(--muted); }
+.review-zoom-viewport { height:55vh;overflow:auto;background:#172b28;color:white; }
+.review-zoom-surface { width:100%;height:100%;display:flex;align-items:center;justify-content:center; }
+.review-zoom-surface img { width:100%;height:100%;object-fit:contain; }
+@media(min-width:1700px) { .review-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:760px) {
+  .review-grid { grid-template-columns:1fr; }
+  .review-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .review-session-row>label { min-width:0;flex-basis:100%; }
+  .review-session-row .button { flex:1; }
+  .review-speed-label { margin-left:0; }
+  .review-view-tools { align-items:start; }
+  #review-camera-filter { flex-basis:100%; }
+  .review-current-metrics { gap:10px; }
+}
+
 * {
   box-sizing:border-box;
 }

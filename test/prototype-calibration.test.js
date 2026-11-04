@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {freshCalibration,validateBoard,calibrationAction,tickCalibration,activeSession,poseBlocker,restoreCalibration} from '../public/js/calibration-model.js';
-import {initialState,captureBlocker,generationBlocker,setAllCameras,restoreState} from '../public/js/model.js';
+import {freshCalibration,validateBoard,calibrationAction,tickCalibration,activeSession,poseBlocker,restoreCalibration} from '../archive/prototype/calibration-model.js';
+import {initialState,captureBlocker,generationBlocker,setAllCameras,restoreState} from '../archive/prototype/model.js';
 const cameras=[{id:'cam-1',name:'Camera 01',facing:'rear'},{id:'cam-2',name:'Camera 02',facing:'rear'}];
 const command=(w,action,at=0)=>calibrationAction(w,action,cameras,at);
 function transferred() {

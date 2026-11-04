@@ -1,5 +1,5 @@
 import {freshCalibration,restoreCalibration} from './calibration-model.js';
-import {analyseCaptureReport} from './capture-metrics.js';
+import {analyseCaptureReport} from '../../public/js/capture-metrics.js';
 export const STORAGE_KEY = 'splat-studio-ui-v1';
 export const STEPS = [
   {id:'prepare',name:'Prepare rig',detail:'Connect & configure',icon:'grid'},
