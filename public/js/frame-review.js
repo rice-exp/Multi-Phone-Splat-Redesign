@@ -1,5 +1,5 @@
 import {icon,esc} from './icons.js';
-import {workflowNavigation} from './workflow.js';
+import {workflowNavigation,workspaceBrand,workspaceHeader} from './workflow.js';
 import {formatMs} from './frame-review-model.js';
 
 const app=document.getElementById('app'),overlays=document.getElementById('overlay-root');
@@ -9,9 +9,9 @@ let sessionRequest,frameRequest,libraryRequest,timer,dialogTrigger;
 const action=(label,id,style='secondary',extra='')=>`<button class="button ${style}" data-review="${id}" ${extra}>${label}</button>`;
 const section=(n,title,description)=>`<div class="section-heading"><div class="section-title"><span class="section-number">${n}</span><div><h2>${title}</h2><p>${description}</p></div></div></div>`;
 app.innerHTML=`<a class="skip-link" href="#workspace">Skip to workspace</a><aside class="sidebar">
-  <a class="brand" href="/">${icon('aperture',30)}<div><span>Rice Experiential Pixels Lab</span><small>CAPTURE WORKSPACE</small></div></a>
+  ${workspaceBrand()}
   <div class="sidebar-label">WORKFLOW</div><nav class="step-nav" aria-label="Capture workflow">${workflowNavigation('frames')}</nav><div class="sidebar-bottom"><div class="rig-card">${icon('folder',22)}<div><strong>Saved captures</strong><span>Files on the lab computer</span></div></div><a class="sidebar-action" href="/">${icon('back',18)} Back to Prepare rig</a></div></aside>
-  <div class="main-shell review-shell"><header class="topbar"><div class="breadcrumb">Capture workspace ${icon('chevron',14)} <strong>Frame review</strong></div><span class="simulation-label rig-live-label">Saved capture files</span></header>
+  <div class="main-shell review-shell">${workspaceHeader('Frame review','<span class="simulation-label rig-live-label">Saved capture files</span>')}
   <main id="workspace" tabindex="-1"><div class="page-heading"><div><div class="eyebrow">STEP 04 OF 06</div><h1>Frame review</h1><p>Compare saved images at the same sequence index.</p></div>${action(`${icon('refresh',16)} Refresh sessions`,'refresh','secondary','id="review-refresh"')}</div>
   <div id="review-error" role="alert"></div>
   <section class="work-section">${section(1,'Choose a capture','Open a transferred session from the lab computer.')}
