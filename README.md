@@ -72,7 +72,7 @@ Suggested ownership: one person handles setup/calibration, one handles capture/e
 
 ## Code map
 
-The Calibration tab also includes [leader color calibration](docs/COLOR-CALIBRATION.md): choose a leader from live camera previews, capture one chart frame, detect the chart automatically, and share the resulting correction across all Calibration previews. Named run presets save the reference frame and adjustments for later reuse and manual refinement. Device-camera input, uploads and manual alignment remain available. No sample image generator is exposed. It does not apply color settings to phones or process full-resolution capture files.
+In [Color calibration](docs/COLOR-CALIBRATION.md), choose a leader and sync its measured white balance through CameraScope to the phones selected in Prepare rig. Each phone has an independent settings readback. Check the mat from each camera’s angle to measure any remaining red or blue cast. The separate chart preset uses a fresh frame or uploaded photo to correct browser previews.
 
 | File | Purpose |
 | --- | --- |

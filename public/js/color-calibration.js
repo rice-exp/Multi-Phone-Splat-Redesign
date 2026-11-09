@@ -83,6 +83,33 @@ export function sampleChart(image,chart,corners) {
   });
 }
 
+// Compare red/green and blue/green with each patch's own reference in linear RGB.
+// Ratios remove overall exposure. The median limits the effect of one uneven patch.
+export function neutralBalance(samples, chart) {
+  const ratios = [];
+  for (const sample of samples) {
+    const ref = chart.patches[sample.index];
+    if (!sample.usable || Math.max(...ref) - Math.min(...ref) > 12 || Math.min(...ref) < 32) continue;
+    const [r, g, b] = sample.measured, [tr, tg, tb] = sample.target;
+    if (g > 0 && tr > 0 && tb > 0) ratios.push([r * tg / (g * tr), b * tg / (g * tb)]);
+  }
+  if (ratios.length < 2) return null;
+  const bias = channel => {
+    const values = ratios.map(r => r[channel]).sort((a, b) => a - b);
+    const mid = Math.floor(values.length / 2);
+    const median = values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+    return (median - 1) * 100;
+  };
+  return {count:ratios.length, red:bias(0), blue:bias(1)};
+}
+
+export function neutralBalanceLabel(samples, chart) {
+  const balance = neutralBalance(samples, chart);
+  if (!balance) return 'Fewer than two usable neutral patches. Check the mat, lighting and angle.';
+  const percent = n => (Math.round(n) > 0 ? '+' : '') + Math.round(n) + '%';
+  return `${balance.count} neutral patches · red/green ${percent(balance.red)} · blue/green ${percent(balance.blue)} against the reference`;
+}
+
 export function patchQualitySummary(samples) {
   const rejected=new Map();let usable=0;
   for(const sample of samples) {

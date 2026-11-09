@@ -3886,3 +3886,12 @@ dialog::backdrop {
 .color-profile-list article { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 0; border-bottom:1px solid var(--line); }.color-profile-list h3 { font-size:15px; margin:12px 0 8px; }.color-profile-list p { font-size:12px; color:#607268; overflow-wrap:anywhere; }
 @media(max-width:1100px) { .color-layout { grid-template-columns:1fr; gap:0; }.color-setup { display:grid; grid-template-columns:1fr 1fr; gap:20px; }.color-main { min-width:0; } }
 @media(max-width:760px) { .cal-tabs { flex-wrap:wrap; }.cal-tab { min-width:40%; }.color-setup { display:block; }.color-intro { align-items:flex-start; flex-direction:column; gap:12px; }.color-sliders { grid-template-columns:1fr; }.color-comparison-control { flex-wrap:wrap; }.color-comparison-control span { display:none; }.color-profile-list article { align-items:flex-start; flex-direction:column; }.color-layout .work-section { padding:20px 16px; }.color-fit-stats strong { font-size:20px; } }
+
+.color-phone-sync {margin: 1rem 0; padding: 1rem 0; border-block: 1px solid var(--line);}
+.color-phone-sync label {display: grid; gap: .35rem; max-width: 24rem;}
+.color-phone-sync li {margin-block: .3rem; overflow-wrap: anywhere;}
+.color-phone-sync details {margin-top: .75rem;}
+.color-phone-sync summary {cursor: pointer;}
+.color-tile-info .chart-reading {white-space: normal; overflow-wrap: anywhere;}
+
+.color-fleet-chart label {display: grid; gap: .35rem; max-width: 24rem; margin-bottom: 1rem;}

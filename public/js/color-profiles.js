@@ -13,7 +13,7 @@ export function colorSourceKey(source) {
 }
 export function colorSettingsKey(source) {
   const settings=source?.kind==='rig-video'
-    ?pick(source.reportedSettings,['cameraId','physicalCameraId','lensFacing','focalLength','zoomRatio','iso','exposureMs','frameDurationMs','autoExposureEnabled','colorProcessing'])
+    ?pick(source.reportedSettings,['cameraId','selectedCameraId','physicalCameraId','lensFacing','focalLength','zoomRatio','iso','exposureMs','frameDurationMs','autoExposureEnabled','colorProcessing'])
     :pick(source?.settings,['deviceId','width','height','facingMode','resizeMode','exposureMode','exposureTime','iso','whiteBalanceMode','colorTemperature','zoom','brightness','contrast','saturation']);
   return JSON.stringify(stable(settings));
 }

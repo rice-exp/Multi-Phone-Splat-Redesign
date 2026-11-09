@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {detectColorChart} from '../public/js/color-chart-detection.js';
-import {CLASSIC24,SPYDER24,chartProjection,decodeSRGB,encodeSRGB,sampleChart,fitColor,validateReference} from '../public/js/color-calibration.js';
+import {CLASSIC24,SPYDER24,chartProjection,decodeSRGB,encodeSRGB,sampleChart,neutralBalance,fitColor,validateReference} from '../public/js/color-calibration.js';
 
 const baseline=[[.18,.12],[.54,.12],[.54,.72],[.18,.72]];
 function fixture(corners=baseline,{noise=0,shuffle=false,extra=null,chart=SPYDER24}={}) {
@@ -65,4 +65,24 @@ test('rejects absent, unrelated and ambiguous charts instead of inventing corner
   assert.throws(()=>detectColorChart(fixture(baseline,{shuffle:true}),SPYDER24),/not confidently found/);
   const first=[[.12,.2],[.34,.2],[.34,.8],[.12,.8]],second=first.map(([x,y])=>[x+.5,y]);
   assert.throws(()=>detectColorChart(fixture(first,{extra:second}),SPYDER24),/More than one/);
+});
+
+test('neutral ratios agree across independently detected angles and exclude clipped patches',()=>{
+  const angles=[baseline,[[.2,.15],[.59,.2],[.54,.8],[.17,.7]]];
+  const checks=angles.map(corners=>{
+    const image=fixture(corners,{noise:1}),found=detectColorChart(image,SPYDER24);
+    return neutralBalance(sampleChart(image,SPYDER24,found.corners),SPYDER24);
+  });
+  for(const reading of checks){
+    assert.ok(reading.count>=4 && reading.red>10 && reading.blue<0);
+    assert.ok(Math.abs(reading.red-checks[0].red)<2 && Math.abs(reading.blue-checks[0].blue)<2);
+  }
+  const samples=SPYDER24.patches.map((rgb,index)=>{
+    const target=rgb.map(n=>decodeSRGB(n/255));
+    return {index,usable:true,target,measured:target.map(v=>v*.42)};
+  });
+  samples[0].usable=false;
+  samples[0].measured=[1,.1,.1];
+  assert.ok(Math.abs(neutralBalance(samples,SPYDER24).red)<1e-8);
+  assert.equal(neutralBalance(samples.slice(0,5),SPYDER24),null);
 });

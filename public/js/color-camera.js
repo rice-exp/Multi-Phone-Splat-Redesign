@@ -26,6 +26,16 @@ export function nextVideoFrame(video,{signal,timeoutMs=4000}={}) {
   });
 }
 
+export function originalVideoPixels(video, createCanvas = () => document.createElement('canvas')) {
+  const scale = Math.min(1, 1000 / video.videoWidth, 750 / video.videoHeight);
+  const canvas = createCanvas();
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  const context = canvas.getContext('2d', {colorSpace:'srgb'});
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return context.getImageData(0, 0, canvas.width, canvas.height);
+}
+
 export class ColorCamera {
   constructor(onStatus,{mediaDevices=globalThis.navigator?.mediaDevices,createVideo=()=>document.createElement('video'),createCanvas=()=>document.createElement('canvas'),Player=LivePreview}={}) {
     this.onStatus=onStatus;this.mediaDevices=mediaDevices;this.createVideo=createVideo;this.createCanvas=createCanvas;this.Player=Player;this.token=0;this.ready=false;this.video=null;this.source=null;
@@ -62,10 +72,7 @@ export class ColorCamera {
     const token=this.token,video=this.video,source=structuredClone(this.source);
     await nextVideoFrame(video,{signal:this.controller.signal});
     if(token!==this.token)throw new Error('The camera changed before capture completed.');
-    const scale=Math.min(1,1000/video.videoWidth,750/video.videoHeight),canvas=this.createCanvas();
-    canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);
-    const context=canvas.getContext('2d',{colorSpace:'srgb'});context.drawImage(video,0,0,canvas.width,canvas.height);
-    return {image:context.getImageData(0,0,canvas.width,canvas.height),source:{...source,capturedAt:new Date().toISOString(),videoWidth:video.videoWidth,videoHeight:video.videoHeight}};
+    return {image:originalVideoPixels(video,this.createCanvas),source:{...source,capturedAt:new Date().toISOString(),videoWidth:video.videoWidth,videoHeight:video.videoHeight}};
   }
   refreshSettings(){if(this.source?.kind==='device-video'){const track=this.stream?.getVideoTracks()[0];if(track?.getSettings)this.source.settings=track.getSettings();}}
   close() {

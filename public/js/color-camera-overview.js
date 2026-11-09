@@ -1,17 +1,18 @@
 import {esc,icon} from './icons.js';
 import {LivePreview,previewEndpoint} from './live-preview.js';
-import {availableColorCameras} from './color-camera.js';
+import {availableColorCameras,nextVideoFrame,originalVideoPixels} from './color-camera.js';
 import {ColorLivePreview} from './color-live-preview.js';
-import {colorSourceKey,sharedPreviewStatus,rigColorSource} from './color-profiles.js';
+import {colorSettingsKey,colorSourceKey,sharedPreviewStatus,rigColorSource} from './color-profiles.js';
 
 // Four streams at a time keeps the overview usable on a laptop or phone.
 export class ColorCameraOverview {
-  constructor(select) {
-    this.select=select;this.page=0;this.entries=new Map();this.element=document.createElement('div');
+  constructor(select, checkChart) {
+    this.checks=new Map();this.select=select;this.page=0;this.entries=new Map();this.element=document.createElement('div');
     this.element.className='color-camera-overview';
     this.element.addEventListener('click',event=>{
       const button=event.target.closest('button');if(!button||button.disabled)return;
       if(button.dataset.cameraSelect)this.select(button.dataset.cameraSelect);
+      if(button.dataset.chartCheck)checkChart(button.dataset.chartCheck);
       if(button.dataset.cameraPage){this.page+=Number(button.dataset.cameraPage);this.update(this.status,this.profile,this.selected,this.busy);}
     });
   }
@@ -28,28 +29,42 @@ export class ColorCameraOverview {
       let entry=this.entries.get(phone.id);
       if(!entry){
         const card=document.createElement('article');card.className='color-camera-tile';
-        card.innerHTML=`<div class="color-tile-video"></div><div class="color-tile-info"><strong>${esc(phone.name)}</strong><small>${esc(phone.ip)}</small><span class="color-tile-stream" role="status"></span><span class="color-tile-profile"></span><button class="button secondary small" data-camera-select="${esc(phone.id)}">Choose as leader</button></div>`;
+        card.innerHTML=`<div class="color-tile-video"></div><div class="color-tile-info"><strong>${esc(phone.name)}</strong><small>${esc(phone.ip)}</small><span class="color-tile-stream" role="status"></span><span class="color-tile-profile"></span><button class="button secondary small" data-camera-select="${esc(phone.id)}">Choose as leader</button><button class="button secondary small" data-chart-check="${esc(phone.id)}">Check chart in this view</button><small class="chart-reading"></small></div>`;
         entry={card};this.entries.set(phone.id,entry);this.grid.append(card);
       }
       const online=available.some(p=>p.id===phone.id),path=online?previewEndpoint(phone,status,location.origin):'';
       const host=entry.card.querySelector('.color-tile-video'),stream=entry.card.querySelector('.color-tile-stream');
-      if(entry.path!==path){
+      if(entry.path!==path || entry.ip!==phone.ip){
+        entry.ip=phone.ip;entry.card.querySelector('small').textContent=phone.ip;
         entry.color?.close();entry.player?.close();entry.color=null;entry.player=null;entry.video=null;entry.path=path;entry.live=false;
         if(path){
           const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;video.setAttribute('aria-label',`Color overview: ${phone.name}`);
           entry.video=video;entry.color=new ColorLivePreview(video,{onError:()=>{entry.failed=true;entry.card.querySelector('.color-tile-profile').textContent='Correction unavailable · original preview';}});
           host.replaceChildren(video,entry.color.canvas);entry.failed=false;
-          entry.player=new LivePreview(video,path,(message,tone)=>{stream.textContent=message;entry.live=tone==='success';if(!entry.live)entry.color.setProfile(null);});
+          entry.player=new LivePreview(video,path,(message,tone)=>{stream.textContent=message;entry.live=tone==='success';if(!entry.live)entry.color?.setProfile(null);entry.card.querySelector('[data-chart-check]').disabled=this.busy||!entry.live;});
         }else{host.innerHTML=`<div class="color-live-empty">${icon('camera',24)}<span>Preview unavailable</span></div>`;stream.textContent=phone.responding?'Start preview in Prepare rig':'Camera offline';}
       }
       entry.card.classList.toggle('selected',selected===phone.id);
       const button=entry.card.querySelector('button');button.disabled=busy||!online;button.textContent=selected===phone.id?'Selected leader':'Choose as leader';
+      const checkButton=entry.card.querySelector('[data-chart-check]');
+      checkButton.disabled=busy||!online||!entry.live;
+      const reading=this.checks.get(phone.id);
+      if(reading && (reading.ip!==phone.ip || !online || reading.settings!==colorSettingsKey(rigColorSource(phone,status))))this.checks.delete(phone.id);
+      entry.card.querySelector('.chart-reading').textContent=this.checks.get(phone.id)?.label||'';
       const isLeader=profile&&colorSourceKey(rigColorSource(phone,status))===colorSourceKey(profile.source.capture);
       const check=sharedPreviewStatus(profile,status);
       entry.color?.setProfile(online&&entry.live&&check.usable&&!entry.failed?profile:null);
       entry.card.querySelector('strong').textContent=phone.name;
       entry.card.querySelector('.color-tile-profile').textContent=entry.failed?'Correction unavailable · original preview':!online&&profile?'Shared preset saved · camera offline':profile?check.usable?(entry.live?`${isLeader?'Preset leader':'Follower'} · shared correction`:'Shared preset · waiting for video'):check.label:'Original preview · no shared preset';
     }
+  }
+  async captureView(phone) {
+    const entry = this.entries.get(phone.id);
+    if (!entry?.live || !entry.video) throw new Error('Wait for live frames from this phone.');
+    const video = entry.video;
+    await nextVideoFrame(video);
+    if (!entry.live || this.entries.get(phone.id)?.video !== video) throw new Error('The camera view changed. Check again.');
+    return originalVideoPixels(video);
   }
   close(){for(const entry of this.entries.values()){entry.color?.close();entry.player?.close();}this.entries.clear();this.element.replaceChildren();this.grid=null;}
 }

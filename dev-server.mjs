@@ -57,8 +57,10 @@ const server=http.createServer(async(req,res)=>{
       if(url.pathname==='/api/rig/refresh')return json(res,200,await rig.refresh(true));
       if(url.pathname==='/api/rig/config')return json(res,200,await rig.configure(value));
       if(['/api/rig/gateway-start','/api/rig/gateway-stop'].includes(url.pathname))return json(res,200,await rig.controlGateway(url.pathname.endsWith('start')?'start':'stop'));
-      if(!['/api/rig/settings','/api/rig/sync','/api/rig/preview-start','/api/rig/preview-stop'].includes(url.pathname))return json(res,404,{error:'Not found'});
-      try{return json(res,200,await rig.operate(url.pathname.split('/').at(-1),value.ids,value.settings));}
+      if(!['/api/rig/settings','/api/rig/color-sync','/api/rig/sync','/api/rig/preview-start','/api/rig/preview-stop'].includes(url.pathname))return json(res,404,{error:'Not found'});
+      const action=url.pathname.split('/').at(-1);
+      const options=action==='color-sync'?{leaderId:value.leaderId,retryId:value.retryId}:value.settings;
+      try{return json(res,200,await rig.operate(action,value.ids,options));}
       catch(error){return json(res,error.status||503,{error:error.message,code:error.code||'RIG_ERROR',next:error.next});}
     }
     if(url.pathname==='/api/participant/events'&&req.method==='GET') {
