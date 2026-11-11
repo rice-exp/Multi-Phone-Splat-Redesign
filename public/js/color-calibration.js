@@ -57,29 +57,51 @@ export function chartProjection(corners) {
   return (u,v)=>{const d=h[6]*u+h[7]*v+1;return [(h[0]*u+h[1]*v+h[2])/d,(h[3]*u+h[4]*v+h[5])/d];};
 }
 
-export function sampleChart(image,chart,corners) {
-  const project=chartProjection(corners),{width,height,data}=image;
-  return chart.patches.map((target,index)=>{
-    const u=(index%chart.columns)/(chart.columns-1),v=Math.floor(index/chart.columns)/(chart.rows-1);
-    const rgb=[0,0,0],encodedSum=[0,0,0],sum2=[0,0,0];let clipped=0,count=0,outside=false;
-    const left=project(u-0.17/(chart.columns-1),v),right=project(u+0.17/(chart.columns-1),v);
-    const top=project(u,v-0.17/(chart.rows-1)),bottom=project(u,v+0.17/(chart.rows-1));
-    const tiny=Math.hypot((right[0]-left[0])*width,(right[1]-left[1])*height)<5||Math.hypot((bottom[0]-top[0])*width,(bottom[1]-top[1])*height)<5;
-    for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++) {
-      const [x,y]=project(u+dx*0.17/3/(chart.columns-1),v+dy*0.17/3/(chart.rows-1));
-      if(x<0||y<0||x>=1||y>=1){outside=true;continue;}
-      const offset=(Math.floor(y*height)*width+Math.floor(x*width))*4;
-      if(data[offset+3]<250){outside=true;continue;}
-      const pixel=[data[offset],data[offset+1],data[offset+2]];
-      if(pixel.some(n=>n>=253||n<=2))clipped++;
-      pixel.forEach((n,k)=>{const linear=decodeSRGB(n/255);rgb[k]+=linear;encodedSum[k]+=n/255;sum2[k]+=(n/255)**2;});count++;
+// Measured in patch-center spacings; the overlay uses the same footprint.
+export const PATCH_HALF_WIDTH = 0.26;
+const clippedPixel = pixel => pixel.some(value => value <= 2 || value >= 253);
+const medianByte = values => values.sort((a,b) => a-b)[Math.floor(values.length / 2)];
+
+function measurePatch(pixels) {
+  const count = pixels.length;
+  const median = [0,1,2].map(channel => medianByte(pixels.map(pixel => pixel[channel])) ?? 0);
+  const clipped = pixels.filter(clippedPixel);
+  // Require a coherent majority in all three channels at the same pixel.
+  // This discards a reflection or a speck without mixing incompatible colors.
+  const clean = pixels.filter(pixel => !clippedPixel(pixel) &&
+    pixel.every((value, channel) => Math.abs(value - median[channel]) <= 18));
+  const measured = [0,1,2].map(channel => clean.length
+    ? clean.reduce((sum,pixel) => sum + decodeSRGB(pixel[channel]/255), 0) / clean.length
+    : decodeSRGB(median[channel]/255));
+  const clippedFraction = clipped.length / Math.max(1,count);
+  const reason = clippedFraction > 0.25 ? 'Clipped' : clean.length < 0.75 * count ? 'Uneven patch' : '';
+  const clippedChannels = ['R','G','B'].filter((_,k) => clipped.some(pixel => pixel[k] <= 2 || pixel[k] >= 253));
+  return {measured, reason, quality:{pixelCount:count, retainedCount:clean.length, clippedFraction, clippedChannels}};
+}
+
+export function sampleChart(image, chart, corners, matchedIndices) {
+  const matched = matchedIndices && new Set(matchedIndices);
+  const project = chartProjection(corners), {width,height,data} = image;
+  const du = PATCH_HALF_WIDTH/(chart.columns-1), dv = PATCH_HALF_WIDTH/(chart.rows-1);
+  return chart.patches.map((target,index) => {
+    const u = (index%chart.columns)/(chart.columns-1), v = Math.floor(index/chart.columns)/(chart.rows-1);
+    const left = project(u-du,v), right = project(u+du,v), top = project(u,v-dv), bottom = project(u,v+dv);
+    const span = (p,q) => Math.hypot((p[0]-q[0])*width, (p[1]-q[1])*height);
+    const pixels = [], seen = new Set();
+    let outside = false;
+    for (let dy=-5; dy<=5; dy++) for (let dx=-5; dx<=5; dx++) {
+      const [x,y] = project(u+dx*du/5, v+dy*dv/5);
+      if (x<0 || y<0 || x>=1 || y>=1) { outside=true; continue; }
+      const offset = (Math.floor(y*height)*width + Math.floor(x*width))*4;
+      if (seen.has(offset)) continue;
+      seen.add(offset);
+      if (data[offset+3]<250) { outside=true; continue; }
+      pixels.push([data[offset],data[offset+1],data[offset+2]]);
     }
-    const measured=rgb.map(n=>n/Math.max(count,1));
-    // Compare variance in encoded space, using a separate encoded mean.
-    const spread=Math.max(...sum2.map((n,k)=>Math.sqrt(Math.max(0,n/Math.max(count,1)-(encodedSum[k]/Math.max(count,1))**2))));
-    const clippedFraction=clipped/Math.max(count,1);
-    const reason=outside?'Outside image':tiny?'Too small':clippedFraction>0.1?'Clipped':spread>0.06?'Uneven patch':'';
-    return {index,measured,target:target.map(n=>decodeSRGB(n/255)),usable:!reason,reason,quality:{clippedFraction,spread,pixelCount:count}};
+    const tiny = Math.min(span(left,right),span(top,bottom)) < 8 || pixels.length < 25;
+    const {measured,quality,reason:pixelReason} = measurePatch(pixels);
+    const reason = matched && !matched.has(index) ? 'Unconfirmed position' : outside ? 'Outside image' : tiny ? 'Too small' : pixelReason;
+    return {index, measured, target:target.map(n=>decodeSRGB(n/255)), usable:!reason, reason, quality};
   });
 }
 

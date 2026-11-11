@@ -39,6 +39,14 @@ function rig() {
   return {commands, faults, states, service, sync, writes:()=>commands.filter(c=>c.body.cmd!=='getState')};
 }
 
+test('concurrent Prepare rig and Calibration refreshes both receive the same phone status',async()=>{
+  const f=rig();
+  const [prepare,calibration]=await Promise.all([f.service.refresh(true),f.service.refresh()]);
+  assert.ok(prepare.connected);
+  assert.deepEqual(calibration,prepare);
+  assert.equal(f.commands.length,phones.length);
+});
+
 test('one measured hardware snapshot reaches only selected phones, including a follower without a preview', async()=>{
   const f = rig();
   f.faults.lostAck = follower.ip;
@@ -54,6 +62,33 @@ test('one measured hardware snapshot reaches only selected phones, including a f
   assert.equal(status.phones[1].previewReady,false);
   assert.equal(f.states.get(side.ip).colorProcessing.awbMode,'AUTO');
   assert.equal(f.states.get(follower.ip).iso,200);
+});
+
+test('copy uses the existing manual leader configuration without remeasuring and skips matching followers', async()=>{
+  const f=rig();
+  const current={...snapshot,whiteBalanceGains:[2.1,1,1,1.3]};
+  f.states.get(leader.ip).colorProcessing={...current,ignoredField:'device-specific'};
+  f.states.get(side.ip).colorProcessing=current;
+  f.faults.lostAck=follower.ip;
+  await f.service.refresh(true);
+  for(const p of phones)f.service.settings.set(p.id,{ip:p.ip});
+  const result=await f.service.operate('color-sync',phones.map(p=>p.id),{leaderId:leader.id,source:'current'});
+  assert.ok(result.ok);
+  assert.equal(result.status.colorSync.source,'current');
+  assert.deepEqual(result.status.colorSync.snapshot,current);
+  assert.deepEqual(f.writes().map(c=>[c.ip,c.body]),[[follower.ip,{cmd:'setColorProcessing',value:current}]]);
+  assert.equal(f.states.get(leader.ip).colorProcessing.ignoredField,'device-specific');
+  assert.deepEqual(result.status.phones.map(p=>Boolean(p.settings)),[true,false,true]);
+});
+
+test('copy rejects auto, incomplete and single-phone setups before writing settings',async()=>{
+  const f=rig(), apply=ids=>f.service.operate('color-sync',ids,{source:'current',leaderId:leader.id});
+  await assert.rejects(apply([leader.id]),{code:'COLOR_NO_FOLLOWERS'});
+  for (const value of [{awbMode:'AUTO'},{...snapshot,whiteBalanceGains:null}]) {
+    f.states.get(leader.ip).colorProcessing=value;
+    await assert.rejects(apply([leader.id,follower.id]),{code:'COLOR_MANUAL_REQUIRED'});
+  }
+  assert.deepEqual(f.writes(),[]);
 });
 
 test('offline and mismatching followers are reported individually; retry copies the same snapshot',async()=>{
@@ -120,5 +155,7 @@ test('the calibration button addresses the displayed selection even if another t
     return {ok:true,json:async()=>({status})};
   });
   assert.equal(await syncPhoneColor(status,displayed,leader.id,true),status);
-  assert.deepEqual(calls,[['/api/rig/color-sync','1',{ids:[leader.id,follower.id],leaderId:leader.id,retryId:'previous-snapshot'}]]);
+  await syncPhoneColor(status,displayed,leader.id,false,'current');
+  assert.deepEqual(calls,[['/api/rig/color-sync','1',{ids:[leader.id,follower.id],leaderId:leader.id,retryId:'previous-snapshot'}],
+    ['/api/rig/color-copy','1',{ids:[leader.id,follower.id],leaderId:leader.id}]]);
 });

@@ -76,7 +76,18 @@ test('pixel sampling and fitting work end to end and flag clipping/uneven sample
   assert.equal(fitColor(damaged).accepted,22);
   assert.deepEqual(patchQualitySummary(damaged),{usable:22,total:24,rejected:[{reason:'Clipped',count:1},{reason:'Uneven patch',count:1}]});
   assert.equal(damaged[0].quality.clippedFraction,1);
-  assert.ok(damaged[3].quality.spread>0.06);
+  assert.ok(damaged[3].quality.retainedCount < damaged[3].quality.pixelCount * 0.75);
+});
+
+test('a localized clipped reflection is excluded from the measured patch color',()=>{
+  const image=chartImage(), before=sampleChart(image,SPYDER24,corners);
+  // Reflection across one side of the central sampling area, covering two of eleven columns.
+  for(let y=30;y<90;y++)for(let x=30;x<49;x++)image.data.set([255,255,255,255],(y*300+x)*4);
+  const patch=sampleChart(image,SPYDER24,corners)[0];
+  assert.equal(patch.usable,true);
+  assert.ok(patch.quality.clippedFraction>0.1 && patch.quality.clippedFraction<0.25);
+  assert.ok(patch.quality.retainedCount<patch.quality.pixelCount);
+  patch.measured.forEach((v,k)=>close(v,before[0].measured[k]));
 });
 
 test('correct alignment can still leave only ten usable patches, with reasons preserved on failure',()=>{
@@ -89,7 +100,7 @@ test('correct alignment can still leave only ten usable patches, with reasons pr
   const original=image.data.slice(),sampled=sampleChart(image,SPYDER24,corners);
   assert.deepEqual(patchQualitySummary(sampled),{usable:10,total:24,rejected:[{reason:'Clipped',count:14}]});
   assert.throws(()=>fitColor(sampled),/Only 10 usable patches\. Need at least 12\. Rejected: 14 clipped\./);
-  assert.equal(sampled[0].quality.pixelCount,49);
+  assert.equal(sampled[0].quality.pixelCount,121);
   assert.equal(sampled[0].quality.clippedFraction,1);
   assert.equal(sampled[14].usable,true);
   assert.deepEqual(image.data,original);

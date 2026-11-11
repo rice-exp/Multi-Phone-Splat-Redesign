@@ -1,4 +1,4 @@
-import {chartProjection,sampleChart,fitColor,clamp} from './color-calibration.js';
+import {chartProjection,sampleChart,fitColor,encodeSRGB,clamp} from './color-calibration.js';
 
 // Conservative detector for a separated rectangular grid of near-uniform patches.
 // Geometry proposes a grid; reference-color agreement validates its identity/order.
@@ -78,15 +78,42 @@ function matchGrid(points,project,chart,width,height,tolerance) {
   return matches;
 }
 
-function colorValidation(image,chart,corners) {
-  const samples=sampleChart(image,chart,corners),usable=samples.filter(s=>s.usable);
-  if(usable.length<Math.max(12,Math.ceil(chart.patches.length*.65)))return null;
-  const fit=fitColor(samples);
-  if(fit.after>13||fit.matrix.some((row,i)=>row[i]<.2||row[i]<Math.max(...row.filter((_,k)=>k!==i).map(Math.abs))*1.2))return null;
-  // The fitter predicts every withheld patch, so training error alone cannot
-  // validate a grid.
-  if(!Number.isFinite(fit.validation.after)||fit.validation.after>20)return null;
-  return fit;
+// Strong color ordering can identify a chart even when the frame is unsuitable
+// for a correction. Require opposite channel orderings to rule out gray grids.
+function matchesReferenceOrder(samples, chart) {
+  const usable = samples.filter(s=>s.usable);
+  if (usable.length < Math.max(8,Math.ceil(samples.length/2))) return false;
+  const patches = usable.map(s=>({ref:chart.patches[s.index], rgb:s.measured.map(n=>255*encodeSRGB(n))}));
+  const pairs = [0,0,0], agreements = [0,0,0];
+  for (let i=0; i<patches.length; i++) for (const other of patches.slice(i+1)) {
+    const {ref,rgb} = patches[i];
+    const delta = ref.map((v,k)=>v-other.ref[k]);
+    if (Math.min(...delta)>-30 || Math.max(...delta)<30) continue;
+    for (let k=0;k<3;k++) {
+      if (Math.abs(delta[k])<30) continue;
+      pairs[k]++;
+      if ((rgb[k]-other.rgb[k])*Math.sign(delta[k])>5) agreements[k]++;
+    }
+  }
+  const agreement=agreements.reduce((sum,n)=>sum+n,0)/pairs.reduce((sum,n)=>sum+n,0);
+  return agreement>=0.86 && pairs.every((count,k)=>count>=8 && agreements[k]/count>=0.75);
+}
+
+function validateGrid(image, chart, corners, matchedIndices) {
+  const samples=sampleChart(image,chart,corners,matchedIndices);
+  if (samples.filter(s=>s.usable).length>=Math.max(12,Math.ceil(samples.length*.65))) {
+    try {
+      const fit=fitColor(samples);
+      if (fit.after<=13 && Number.isFinite(fit.validation.after) && fit.validation.after<=20 &&
+          fit.matrix.every((row,i)=>row[i]>=.2 && row[i]>=Math.max(...row.filter((_,k)=>k!==i).map(Math.abs))*1.2)) {
+        return {method:'patch-grid-v2',error:fit.after};
+      }
+    } catch { /* A chart can be located even if its correction cannot be fitted. */ }
+  }
+  if (matchedIndices.length>=Math.ceil(samples.length*.9) && matchesReferenceOrder(samples,chart)) {
+    return {method:'patch-grid-color-order',error:null};
+  }
+  return null;
 }
 
 export function detectColorChart(original,chart) {
@@ -104,17 +131,37 @@ export function detectColorChart(original,chart) {
       for(const patch of points) {
         if(patch.area/origin.area<.3||patch.area/origin.area>3)continue;
         const x=patch.x-origin.x,y=patch.y-origin.y,u=(x*by-y*bx)/det,v=(ax*y-ay*x)/det,col=Math.round(u),row=Math.round(v),error=Math.hypot(u-col,v-row);
-        if(col<0||col>=chart.columns||row<0||row>=chart.rows||error>.38)continue;
-        const key=row*chart.columns+col;if(!cells.has(key)||error<cells.get(key).error)cells.set(key,{col,row,patch,error});
+        if(Math.abs(col)>=chart.columns||Math.abs(row)>=chart.rows||error>.38)continue;
+        const key=row*(2*chart.columns)+col;if(!cells.has(key)||error<cells.get(key).error)cells.set(key,{col,row,patch,error});
       }
-      if(cells.size<Math.max(12,Math.ceil(total*.68)))continue;
-      const matches=[...cells.values()];proposals.push({matches,step:Math.min(dx,dy),score:matches.length-matches.reduce((sum,m)=>sum+m.error,0)});
+      // The seed may be an interior patch when a corner is dark or obscured.
+      const minimum=Math.max(10,Math.ceil(total*.58));
+      if(cells.size<minimum)continue;
+      const lattice=[...cells.values()],step=Math.min(dx,dy),windows=[];
+      for(let top=1-chart.rows;top<=0;top++) {
+        const band=lattice.filter(p=>p.row>=top && p.row<top+chart.rows);
+        if(band.length<minimum)continue;
+        for(let left=1-chart.columns;left<=0;left++) {
+          const window=band.filter(p=>p.col>=left && p.col<left+chart.columns);
+          if(window.length<minimum)continue;
+          windows.push({matches:window,left,top,step, x:origin.x+ax*left+bx*top, y:origin.y+ay*left+by*top,
+            angle:Math.atan2(ay,ax),score:window.length-window.reduce((sum,m)=>sum+m.error,0)});
+        }
+      }
+      windows.sort((a,b)=>b.score-a.score);
+      proposals.push(...windows.slice(0,4));
     }
   }
   proposals.sort((a,b)=>b.score-a.score);
   const candidates=[];
-  for(const proposal of proposals.slice(0,100))try {
-    let corners=refine(proposal.matches,chart,width,height),matches;
+  const tried=[];
+  for(const proposal of proposals)try {
+    if(tried.some(p=>Math.hypot(p.x-proposal.x,p.y-proposal.y)<proposal.step*.35 &&
+        Math.cos(p.angle-proposal.angle)>.995 && Math.abs(p.step-proposal.step)<proposal.step*.08))continue;
+    if(tried.length>=100)break;
+    tried.push(proposal);
+    let matches=proposal.matches.map(p=>({...p,col:p.col-proposal.left,row:p.row-proposal.top}));
+    let corners=refine(matches,chart,width,height);
     for(let n=0;n<2;n++) {
       matches=matchGrid(points,chartProjection(corners),chart,width,height,proposal.step*.23);
       if(matches.length<Math.ceil(total*.8))break;
@@ -123,11 +170,11 @@ export function detectColorChart(original,chart) {
     if(matches.length<Math.ceil(total*.8))continue;
     chartProjection(corners);
     if(candidates.some(c=>c.corners.every((p,i)=>Math.hypot(p[0]-corners[i][0],p[1]-corners[i][1])<.035)))continue;
-    const fit=colorValidation(original,chart,corners);if(!fit)continue;
-    candidates.push({corners,matched:matches.length,total,error:fit.after,method:'patch-grid-v1'});
+    const matchedIndices=matches.map(({row,col})=>row*chart.columns+col);
+    const validation=validateGrid(original,chart,corners,matchedIndices);if(!validation)continue;
+    candidates.push({corners,matched:matches.length,matchedIndices,total,...validation});
   }catch{/* A failed candidate is not evidence for a chart. */}
   if(!candidates.length)return fail();
-  candidates.sort((a,b)=>a.error-b.error);
   if(candidates.length>1)throw new Error('More than one plausible chart was found. Keep one chart in view or use manual alignment.');
   return candidates[0];
 }

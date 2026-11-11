@@ -4,12 +4,13 @@ import {detectColorChart} from '../public/js/color-chart-detection.js';
 import {CLASSIC24,SPYDER24,chartProjection,decodeSRGB,encodeSRGB,sampleChart,neutralBalance,fitColor,validateReference} from '../public/js/color-calibration.js';
 
 const baseline=[[.18,.12],[.54,.12],[.54,.72],[.18,.72]];
-function fixture(corners=baseline,{noise=0,shuffle=false,extra=null,chart=SPYDER24}={}) {
+function fixture(corners=baseline,{noise=0,shuffle=false,extra=null,chart=SPYDER24,missing=[],render=null}={}) {
   const width=420,height=420,data=new Uint8ClampedArray(width*height*4);
   for(let i=0;i<data.length;i+=4)data.set([23,28,24,255],i);
   const draw=points=>{
     const project=chartProjection(points);
     chart.patches.forEach((_,index)=>{
+      if(missing.includes(index))return;
       const rgb=chart.patches[shuffle?(index*7+5)%24:index].map(n=>decodeSRGB(n/255));
       const cast=[.79*rgb[0]+.045*rgb[1]+.01*rgb[2],.01*rgb[0]+.68*rgb[1]+.01*rgb[2],.015*rgb[0]+.02*rgb[1]+.55*rgb[2]].map(n=>255*encodeSRGB(n));
       const u=(index%chart.columns)/(chart.columns-1),v=Math.floor(index/chart.columns)/(chart.rows-1),du=.38/(chart.columns-1),dv=.38/(chart.rows-1);
@@ -19,7 +20,7 @@ function fixture(corners=baseline,{noise=0,shuffle=false,extra=null,chart=SPYDER
       for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++) {
         if(!quad.every((p,i)=>{const q=quad[(i+1)%4];return (q[0]-p[0])*(y+.5-p[1])-(q[1]-p[1])*(x+.5-p[0])>=0;}))continue;
         const jitter=noise*(Math.sin(x*37+y*13)+.4*(y/height-.5));
-        data.set([...cast.map(n=>n+jitter),255],(y*width+x)*4);
+        data.set([...(render?render(cast,index):cast).map(n=>n+jitter),255],(y*width+x)*4);
       }
     });
   };
@@ -85,4 +86,26 @@ test('neutral ratios agree across independently detected angles and exclude clip
   samples[0].measured=[1,.1,.1];
   assert.ok(Math.abs(neutralBalance(samples,SPYDER24).red)<1e-8);
   assert.equal(neutralBalance(samples.slice(0,5),SPYDER24),null);
+});
+
+test('an interior seed finds the grid when all four corner components are absent',()=>{
+  const corners=[[.16,.18],[.78,.21],[.73,.59],[.14,.54]];
+  const image=fixture(corners,{chart:CLASSIC24,missing:[0,5,18,23]});
+  const result=detectColorChart(image,CLASSIC24);
+  assert.equal(result.matched,20);
+  const samples=sampleChart(image,CLASSIC24,result.corners,result.matchedIndices);
+  assert.equal(fitColor(samples).accepted,20);
+  for(const index of [0,5,18,23])assert.equal(samples[index].reason,'Unconfirmed position');
+  result.corners.forEach((p,i)=>p.forEach((n,k)=>assert.ok(Math.abs(n-corners[i][k])<.02)));
+});
+
+test('strongly nonlinear color can identify the chart separately from a poor fit',()=>{
+  const corners=[[.15,.2],[.75,.2],[.75,.56],[.15,.56]];
+  const render=rgb=>rgb.map(value=>20+220*(value/235)**2);
+  const image=fixture(corners,{chart:CLASSIC24,render});
+  const result=detectColorChart(image,CLASSIC24);
+  assert.equal(result.method,'patch-grid-color-order');
+  assert.equal(result.error,null);
+  assert.ok(fitColor(sampleChart(image,CLASSIC24,result.corners)).validation.after>12);
+  assert.throws(()=>detectColorChart(fixture(corners,{chart:CLASSIC24,render:rgb=>Array(3).fill(rgb[1])}),CLASSIC24),/not confidently found/);
 });

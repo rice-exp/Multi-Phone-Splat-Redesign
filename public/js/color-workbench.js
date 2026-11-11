@@ -1,5 +1,5 @@
 import {esc,icon} from './icons.js';
-import {CLASSIC24,SPYDER24,IDENTITY,MIN_USABLE_PATCHES,defaultAdjustments,validateReference,chartProjection,sampleChart,patchQualitySummary,neutralBalanceLabel,fitColor,correctedPixels,clamp} from './color-calibration.js';
+import {CLASSIC24,SPYDER24,IDENTITY,MIN_USABLE_PATCHES,PATCH_HALF_WIDTH,defaultAdjustments,validateReference,chartProjection,sampleChart,patchQualitySummary,neutralBalanceLabel,fitColor,correctedPixels,clamp} from './color-calibration.js';
 import {ColorCamera,availableColorCameras} from './color-camera.js';
 import {LEADER_COLOR_STORAGE,rigColorSource,colorSourceKey,colorSettingsKey,readLeaderPresets,saveLeaderPreset,selectLeaderPreset,removeLeaderPreset,sharedPreviewStatus} from './color-profiles.js';
 import {ColorLivePreview} from './color-live-preview.js';
@@ -14,7 +14,7 @@ const cornerNames={
 const w={chart:CLASSIC24,image:null,source:'',sample:false,corners:[],fit:null,samples:[],adjust:defaultAdjustments(),split:50,camera:'',name:'',message:'',profiles:[],loaded:false,loading:false,cursor:[0.5,0.5],input:'rig',rig:null,rigId:'',rigMessage:'Refresh cameras to find running previews.',captureMeta:null,alignment:'auto',detection:null};
 let previewPixels=null,animation,activeRoot=null,worker=null,rejectDetection=null,cameraMessage='Camera disconnected',viewGeneration=0,connecting=false;
 let leaderState={activeId:null,presets:[]},overview=null,liveColor=null,pollTimer=null,pollBusy=false,showOriginal=false,liveError='';
-let syncMessage='', rigOperation=0, displayedPhoneIds=[];
+let syncMessage='', syncSource='current', rigOperation=0, displayedPhoneIds=[];
 w.editingPresetId=null;
 w.rigId=new URLSearchParams(location.search).get('colorCamera')||'';
 const camera=new ColorCamera((message,ready)=>{
@@ -59,7 +59,7 @@ function updateLiveColor() {
   if (panel) {
     const phones=selectedColorPhones(w.rig);
     displayedPhoneIds=phones.map(phone=>phone.id);
-    const html=phoneColorPanel(w.rig,phones,w.rigId,w.loading,syncMessage);
+    const html=phoneColorPanel(w.rig,phones,w.rigId,w.loading,syncMessage,syncSource);
     if (html!==panel.renderedMarkup) {
       const open=[...panel.querySelectorAll('details')].map(el=>el.open);
       const focused=panel.contains(document.activeElement)?document.activeElement:null;
@@ -141,13 +141,14 @@ function patchChecks() {
   const quality=patchQualitySummary(w.samples);
   const guidance={
     'Clipped':'A color channel reached its bright or dark limit. Capture again with less glare and balanced exposure; preview sliders cannot recover lost color.',
+    'Unconfirmed position':'The grid predicts this position, but the patch was not identified. Check for an obstruction or use manual alignment.',
     'Uneven patch':'Pixels vary too much within a patch. Check the boxes for edges, glare, shadows or printed marks.',
     'Too small':'The chart is too small to measure reliably. Move closer so the chart fills more of the frame.',
     'Outside image':'A sample falls outside the photo or includes transparency. Keep the whole chart in view and check the corner centers.'
   };
   return `<div id="color-patch-quality" class="color-patch-quality ${quality.rejected.length?'has-rejections':''}"><strong>${quality.usable} / ${quality.total} usable patches · ${MIN_USABLE_PATCHES} required</strong><p>${esc(neutralBalanceLabel(w.samples,w.chart))}</p><p>Green solid boxes pass the checks. Orange dashed boxes are rejected. Alignment and pixel quality are checked separately.</p>
     ${quality.rejected.map(({reason,count})=>`<p><b>${count} ${esc(reason.toLowerCase())}.</b> ${esc(guidance[reason]||'Check the marked patches and capture again.')}</p>`).join('')}
-    <details ${!w.fit?'open':''}><summary>Inspect all ${quality.total} patches</summary><p>Same layout as the chart, numbered left to right, then top to bottom. Percentages show clipped pixels in each sample.</p><ol class="color-patch-checks" style="grid-template-columns:repeat(${w.chart.columns},minmax(0,1fr))">${w.samples.map(s=>`<li class="${s.usable?'':'rejected'}"><b>${s.index+1}</b><span>${s.usable?'Usable':esc(s.reason)}</span>${s.reason==='Clipped'&&Number.isFinite(s.quality?.clippedFraction)?`<small>${Math.round(s.quality.clippedFraction*100)}%</small>`:''}</li>`).join('')}</ol></details></div>`;
+    <details ${!w.fit?'open':''}><summary>Inspect all ${quality.total} patches</summary><p>Same layout as the chart, numbered left to right, then top to bottom. Each patch needs at least 75% consistent, unclipped pixels.</p><ol class="color-patch-checks" style="grid-template-columns:repeat(${w.chart.columns},minmax(0,1fr))">${w.samples.map(s=>`<li class="${s.usable?'':'rejected'}"><b>${s.index+1}</b><span>${s.usable?'Usable':esc(s.reason)}</span>${s.reason==='Clipped'&&Number.isFinite(s.quality?.clippedFraction)?`<small>${Math.round(s.quality.clippedFraction*100)}% clipped · ${esc((s.quality.clippedChannels||[]).join('/'))}</small>`:''}</li>`).join('')}</ol></details></div>`;
 }
 
 function markup() {
@@ -182,7 +183,11 @@ function markup() {
 
 function alignmentMessage() {
   if(w.loading)return 'Working on the reference frame…';
-  if(w.samples.length){const quality=patchQualitySummary(w.samples);return `${quality.usable} / ${quality.total} patches passed pixel checks. ${quality.rejected.length?'Inspect the orange dashed boxes and the reasons below.':'All sampling boxes passed.'}`;}
+  if(w.samples.length){
+    const {usable,total}=patchQualitySummary(w.samples);
+    if(usable<MIN_USABLE_PATCHES)return `${usable} of ${total} usable patches. At least ${MIN_USABLE_PATCHES} are required. Inspect the marked patches and retake the chart.`;
+    return `${usable} of ${total} usable patches. ${usable<total?'Orange patches are excluded from the fit.':'All patches passed.'}`;
+  }
   if(w.detection)return `Chart detected: ${w.detection.matched} / ${w.detection.total} patch positions. Check the green sampling boxes before saving.`;
   if(w.alignment==='auto')return 'Choose Auto-calibrate to detect the chart and calculate the correction.';
   if(w.corners.length===4)return 'Four corners set. Check the green sampling boxes, then choose Calibrate from points.';
@@ -208,7 +213,7 @@ function drawAlignment(canvas) {
   if(w.corners.length===4)try {
     const project=chartProjection(w.corners);
     for(let r=0;r<w.chart.rows;r++)for(let col=0;col<w.chart.columns;col++) {
-      const u=col/(w.chart.columns-1),v=r/(w.chart.rows-1),du=0.17/(w.chart.columns-1),dv=0.17/(w.chart.rows-1);
+      const u=col/(w.chart.columns-1),v=r/(w.chart.rows-1),du=PATCH_HALF_WIDTH/(w.chart.columns-1),dv=PATCH_HALF_WIDTH/(w.chart.rows-1);
       const rejected=w.samples[r*w.chart.columns+col]?.usable===false;
       c.strokeStyle=rejected?'#ff9b42':'#82ffbb';c.setLineDash(rejected?[5,3]:[]);
       c.beginPath();[[-du,-dv],[du,-dv],[du,dv],[-du,dv]].forEach(([dx,dy],i)=>{const [x,y]=project(u+dx,v+dy);c[i?'lineTo':'moveTo'](x*width,y*height);});c.closePath();c.stroke();
@@ -275,7 +280,7 @@ async function calibrate(root,{capture=false,manual=false}={}) {
     if(!w.image)throw new Error('Capture a camera frame or load a photo first.');
     clearFit();
     if(!manual){w.corners=[];w.alignment='auto';const detection=await findChart(w.image,w.chart);if(generation!==viewGeneration)return;w.detection=detection;w.corners=detection.corners;}
-    w.samples=sampleChart(w.image,w.chart,w.corners);w.fit=fitColor(w.samples);previewPixels=null;
+    w.samples=sampleChart(w.image,w.chart,w.corners,w.detection?.matchedIndices);w.fit=fitColor(w.samples);previewPixels=null;
     w.message=`${manual?'Aligned chart':`Chart detected (${w.detection.matched}/${w.detection.total} positions)`}. Image correction calculated from ${w.fit.accepted} patches. Review the same-frame comparison before saving. ${w.fit.after>12?'High residual error: review lighting and alignment.':''}`;
     if(capture&&w.captureMeta?.kind==='rig-video'){await applyCurrentProfile();}
   }catch(error){if(generation===viewGeneration)w.message=`${error.message}${capture&&activeLeaderPreset()?' The existing shared preset has not been replaced.':''}`;}
@@ -306,10 +311,10 @@ async function synchronizePhones(root, retry) {
   const ids=displayedPhoneIds;
   rigOperation++;
   w.loading=true;
-  syncMessage=retry?'Checking phones against the last snapshot…':'Waiting for the leader to lock white balance…';
+  syncMessage=retry?'Checking phones against the last snapshot…':syncSource==='current'?'Copying the leader’s current settings…':'Waiting for the leader to lock white balance…';
   redraw(root);
   try {
-    const status=await syncPhoneColor(w.rig,ids,w.rigId,retry);
+    const status=await syncPhoneColor(w.rig,ids,w.rigId,retry,syncSource);
     if(generation!==viewGeneration)return;
     w.rig=status;
     const all=status.colorSync.results.every(result=>result.ok);
@@ -344,7 +349,7 @@ async function checkCameraChart(root, id) {
     const checked=availableColorCameras(refreshed).find(p=>p.id===id);
     if(!checked || colorSourceKey(source)!==colorSourceKey(rigColorSource(checked,refreshed)) ||
         colorSettingsKey(source)!==colorSettingsKey(rigColorSource(checked,refreshed)))throw new Error('Phone settings changed. Check this view again.');
-    label=neutralBalanceLabel(sampleChart(frame,w.chart,detection.corners),w.chart);
+    label=neutralBalanceLabel(sampleChart(frame,w.chart,detection.corners,detection.matchedIndices),w.chart);
   }catch(error){label='Check unavailable. '+error.message;}
   finally {
     if(generation===viewGeneration){
@@ -435,6 +440,7 @@ export function mountColorWorkbench(root) {
     const el=event.target;
     try {
       if(w.loading)return;
+      if(el.id==='color-sync-source'){syncSource=el.value;syncMessage='';updateLiveColor();}
       if(el.id==='color-sync-leader'){
         if(camera.source?.kind==='rig-video'&&camera.source.cameraId!==el.value){camera.close();clearReference();}
         w.rigId=el.value;syncMessage='';redraw(root);
