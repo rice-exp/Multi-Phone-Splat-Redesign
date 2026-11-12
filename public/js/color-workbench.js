@@ -1,7 +1,7 @@
 import {esc,icon} from './icons.js';
 import {CLASSIC24,SPYDER24,IDENTITY,MIN_USABLE_PATCHES,PATCH_HALF_WIDTH,defaultAdjustments,validateReference,chartProjection,sampleChart,patchQualitySummary,neutralBalanceLabel,fitColor,correctedPixels,clamp} from './color-calibration.js';
 import {ColorCamera,availableColorCameras} from './color-camera.js';
-import {LEADER_COLOR_STORAGE,rigColorSource,colorSourceKey,colorSettingsKey,readLeaderPresets,saveLeaderPreset,selectLeaderPreset,removeLeaderPreset,sharedPreviewStatus} from './color-profiles.js';
+import {LEADER_COLOR_STORAGE,rigColorSource,colorSourceKey,colorSettingsKey,referenceSettings,readLeaderPresets,prepareLeaderPreset,saveLeaderPreset,selectLeaderPreset,removeLeaderPreset,sharedPreviewStatus} from './color-profiles.js';
 import {ColorLivePreview} from './color-live-preview.js';
 import {phoneColorPanel,selectedColorPhones,syncPhoneColor} from './phone-color-sync.js';
 import {ColorCameraOverview} from './color-camera-overview.js';
@@ -16,6 +16,7 @@ let previewPixels=null,animation,activeRoot=null,worker=null,rejectDetection=nul
 let leaderState={activeId:null,presets:[]},overview=null,liveColor=null,pollTimer=null,pollBusy=false,showOriginal=false,liveError='';
 let syncMessage='', syncSource='current', rigOperation=0, displayedPhoneIds=[];
 w.editingPresetId=null;
+w.balanceNote='';
 w.rigId=new URLSearchParams(location.search).get('colorCamera')||'';
 const camera=new ColorCamera((message,ready)=>{
   cameraMessage=message;
@@ -47,17 +48,27 @@ function updateLiveColor() {
   const selector=activeRoot.querySelector('#color-rig-camera');
   if(selector){const phones=availableColorCameras(w.rig),options=(phones.length&&!phones.some(p=>p.id===w.rigId)?'<option value="">Choose a leader camera</option>':'')+phones.map(p=>`<option value="${esc(p.id)}" ${p.id===w.rigId?'selected':''}>${esc(p.name)} · ${esc(p.ip)}</option>`).join('')||'<option>No live rig previews available</option>';if(selector.innerHTML!==options)selector.innerHTML=options;selector.disabled=w.loading||!phones.length;const connect=activeRoot.querySelector('[data-color-action="connect-rig"]');if(connect)connect.disabled=w.loading||!phones.some(p=>p.id===w.rigId);}
   const usesShared=source?.kind==='rig-video'&&check.usable;
+  const balance=activeRoot.querySelector('[data-color-action="auto-balance"]');
+  if(balance)balance.disabled=w.loading||!camera.ready||source?.kind!=='rig-video'||source.cameraId!==w.rigId||
+    !availableColorCameras(w.rig).some(p=>colorSourceKey(rigColorSource(p,w.rig))===colorSourceKey(source));
+  const balanceStatus=activeRoot.querySelector('#color-balance-status');
+  if(balanceStatus)balanceStatus.textContent=w.balanceNote||(balance?.disabled?'Choose a leader and wait for live video.':`Ready to adjust ${source.cameraName}. When brightness and neutral colors look stable, capture a fresh chart frame.`);
   liveColor?.setProfile(camera.ready&&usesShared&&!showOriginal&&!liveError?profile:null);
   const label=activeRoot.querySelector('#color-applied-status');
   if(label)label.textContent=liveError||(!camera.source?'Choose the leader from the camera previews above.':!camera.ready?'Camera not live · correction paused':usesShared?`${showOriginal?'Original view · correction bypassed':'Shared correction preview'} · ${profile.name}`:check.label);
   const toggle=activeRoot.querySelector('[data-color-action="toggle-original"]');if(toggle){toggle.disabled=!usesShared||!camera.ready;toggle.textContent=showOriginal?'Show corrected':'Show original';}
-  const remove=activeRoot.querySelector('[data-color-action="disable-shared"]');if(remove)remove.disabled=!profile;
-  const apply=activeRoot.querySelector('[data-color-action="apply"]');if(apply)apply.disabled=w.loading||!w.fit||w.sample||w.captureMeta?.kind!=='rig-video'||(!w.editingPresetId&&(!camera.ready||colorSourceKey(w.captureMeta)!==colorSourceKey(source)));
+  const remove=activeRoot.querySelector('[data-color-action="disable-shared"]');if(remove)remove.disabled=!profile||!!profile.phoneApplication;
+  const selected=selectedColorPhones(w.rig);
+  const leader=selected.find(p=>p.id===w.rigId&&p.responding&&colorSourceKey(rigColorSource(p,w.rig))===colorSourceKey(w.captureMeta));
+  const apply=activeRoot.querySelector('[data-color-action="apply"]');
+  if(apply)apply.disabled=w.loading||!w.fit||w.sample||w.captureMeta?.kind!=='rig-video'||!leader||!w.rig?.workflowKnown||w.rig.workflowBusy||!!w.rig.busy;
+  const targets=activeRoot.querySelector('#color-adjust-targets');
+  if(targets)targets.textContent=leader?`Apply updates ${leader.name} first, then copies its verified settings to ${selected.filter(p=>p.id!==leader.id).map(p=>p.name).join(', ')||'no followers (leader only)'}.`:'Capture a chart from a leader selected in Prepare rig to apply adjustments to the phones.';
   const presetStatus=activeRoot.querySelector('#color-shared-status');if(presetStatus)presetStatus.textContent=check.label;
   overview?.update(w.rig,profile,w.rigId,w.loading);
   const panel=activeRoot.querySelector('#color-phone-sync');
   if (panel) {
-    const phones=selectedColorPhones(w.rig);
+    const phones=selected;
     displayedPhoneIds=phones.map(phone=>phone.id);
     const html=phoneColorPanel(w.rig,phones,w.rigId,w.loading,syncMessage,syncSource);
     if (html!==panel.renderedMarkup) {
@@ -94,20 +105,49 @@ function profileSnapshot() {
   if(!w.camera.trim()||!w.name.trim())throw new Error('Enter a camera / lens and profile name before saving.');
   return {version:1,id:crypto.randomUUID(),name:w.name.trim(),camera:w.camera.trim(),createdAt:new Date().toISOString(),sample:w.sample,pipeline:'decoded-sRGB-image',appliedToHardware:false,target:{kind:'chart-reference',name:w.chart.name},chart:structuredClone(w.chart),source:{filename:w.source,width:w.image.width,height:w.image.height,corners:structuredClone(w.corners),capture:w.captureMeta?structuredClone(w.captureMeta):null,detection:w.detection?structuredClone(w.detection):null},fit:structuredClone(w.fit),adjustments:{...w.adjust}};
 }
-async function applyCurrentProfile({newPreset=false}={}) {
+async function applyCurrentProfile({newPreset=false,toPhones=false}={}) {
   const generation=viewGeneration;
   const saved=leaderState.presets.find(p=>p.id===w.editingPresetId),source=w.captureMeta;
+  const ids=[...displayedPhoneIds],leaderId=w.rigId;
+  const intended={...w.adjust};
   if(w.sample||source?.kind!=='rig-video')throw new Error('Choose a rig camera as leader and capture its chart frame first.');
   if(!saved&&(!camera.ready||colorSourceKey(source)!==colorSourceKey(camera.source)))throw new Error('Reconnect the selected leader before applying a new calibration.');
-  const status=await rigStatus();if(generation!==viewGeneration)throw new Error('Camera view changed before applying.');
+  let status=await rigStatus();if(generation!==viewGeneration)throw new Error('Camera view changed before applying.');
   const leader=(status.phones||[]).find(p=>p.responding&&colorSourceKey(rigColorSource(p,status))===colorSourceKey(source));
   if(!saved&&!leader)throw new Error('Leader is unavailable. Reconnect before applying a new calibration.');
   const canvas=document.createElement('canvas'),scale=Math.min(1,640/w.image.width,480/w.image.height),original=document.createElement('canvas');
   original.width=w.image.width;original.height=w.image.height;original.getContext('2d').putImageData(w.image,0,0);
   canvas.width=Math.round(w.image.width*scale);canvas.height=Math.round(w.image.height*scale);canvas.getContext('2d').drawImage(original,0,0,canvas.width,canvas.height);
-  const profile={...profileSnapshot(),id:!newPreset&&saved?saved.id:crypto.randomUUID(),samples:structuredClone(w.samples),referenceImage:{dataUrl:canvas.toDataURL('image/jpeg',.9),width:canvas.width,height:canvas.height}};
-  leaderState=saveLeaderPreset(localStorage,profile,leader?rigColorSource(leader,status):source);w.editingPresetId=profile.id;showOriginal=false;liveError='';
-  w.message=`Saved “${profile.name}” from leader ${profile.camera}. ${sharedPreviewStatus(activeLeaderPreset(),status).usable?'The same correction is applied to every rig preview in this Calibration tab.':'It will apply when the matching rig is available.'} Final capture files and phone settings are unchanged.`;
+  const profile={...profileSnapshot(),adjustments:intended,id:!newPreset&&saved?saved.id:crypto.randomUUID(),samples:structuredClone(w.samples),referenceImage:{dataUrl:canvas.toDataURL('image/jpeg',.9),width:canvas.width,height:canvas.height}};
+  const prior=w.phoneApplication||saved?.phoneApplication;
+  let verifySource=leader?rigColorSource(leader,status):source;
+  if(toPhones){
+    if(!leader||leader.id!==leaderId||!ids.includes(leaderId))throw new Error('Select this reference camera as the leader in Prepare rig and Calibration.');
+    prepareLeaderPreset(profile,source);
+    rigOperation++;
+    status=await syncPhoneColor(status,ids,leaderId,false,'adjust',{
+      ip:source.ip,route:source.route,reference:referenceSettings(source.reportedSettings),
+      fit:{matrix:w.fit.matrix,offset:w.fit.offset,after:w.fit.after,validation:w.fit.validation},adjustments:profile.adjustments,previousTransform:prior?.transform
+    });
+    if(generation!==viewGeneration)return;
+    w.rig=status;
+    const sync=status.colorSync, others=sync.results.filter(r=>r.id!==leaderId);
+    syncMessage=`${leader.name} updated. ${others.filter(r=>r.ok).length} of ${others.length} selected followers matched.`;
+    if(others.some(r=>!r.ok))syncMessage+=' See Last sync and use Retry with same settings.';
+    overview?.checks.clear();
+    w.phoneApplication={transform:sync.snapshot.colorCorrectionTransform,at:sync.at,adjustments:{...profile.adjustments},matrix:structuredClone(profile.fit.matrix),results:sync.results.map(({id,ok})=>({id,ok}))};
+    verifySource=source;
+  }
+  const lastApplication=w.phoneApplication||prior;
+  if(lastApplication){
+    profile.phoneApplication=lastApplication;
+    profile.appliedToHardware=toPhones||(JSON.stringify(profile.adjustments)===JSON.stringify(lastApplication.adjustments)&&JSON.stringify(profile.fit.matrix)===JSON.stringify(lastApplication.matrix));
+    verifySource=source;
+  }
+  try {leaderState=saveLeaderPreset(localStorage,profile,verifySource);}
+  catch(error){if(toPhones)throw new Error(syncMessage+' Could not save the preset in this browser: '+error.message);throw error;}
+  w.editingPresetId=profile.id;showOriginal=false;liveError='';
+  w.message=toPhones?syncMessage+` Saved “${profile.name}”.`:`Saved “${profile.name}” from ${profile.camera}. ${sharedPreviewStatus(activeLeaderPreset(),status).label}`;
   return profile;
 }
 
@@ -120,7 +160,7 @@ async function loadPreset(id,root) {
       if(generation!==viewGeneration)return;
       const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const c=canvas.getContext('2d');c.drawImage(bitmap,0,0);
       leaderState=selectLeaderPreset(localStorage,id);camera.close();clearReference();
-      w.image=c.getImageData(0,0,canvas.width,canvas.height);w.captureMeta=structuredClone(profile.source.capture);w.camera=profile.camera;w.name=profile.name;w.chart=structuredClone(profile.chart);w.fit=structuredClone(profile.fit);w.adjust={...profile.adjustments};w.corners=structuredClone(profile.source.corners);w.detection=profile.source.detection;w.samples=profile.samples||[];w.source=`Saved leader frame · ${profile.camera}`;w.editingPresetId=id;w.rigId=profile.source.capture.cameraId;w.input='rig';previewPixels=null;
+      w.phoneApplication=profile.phoneApplication||null;w.image=c.getImageData(0,0,canvas.width,canvas.height);w.captureMeta=structuredClone(profile.source.capture);w.camera=profile.camera;w.name=profile.name;w.chart=structuredClone(profile.chart);w.fit=structuredClone(profile.fit);w.adjust={...profile.adjustments};w.corners=structuredClone(profile.source.corners);w.detection=profile.source.detection;w.samples=profile.samples||[];w.source=`Saved leader frame · ${profile.camera}`;w.editingPresetId=id;w.rigId=profile.source.capture.cameraId;w.input='rig';previewPixels=null;
       w.message=`Loaded “${profile.name}”. ${sharedPreviewStatus(profile,w.rig).label}. Adjust the saved frame and apply again, or reconnect the leader to take a new calibration frame.`;
     }finally{bitmap.close();}
   }finally{if(generation===viewGeneration){w.loading=false;redraw(root);}}
@@ -133,7 +173,8 @@ function sourceControls() {
     ${w.input==='rig'?`<label class="color-camera-select">Selected leader<select id="color-rig-camera" ${w.loading||!phones.length?'disabled':''}>${!phones.length?'<option>No live rig previews available</option>':phones.map(p=>`<option value="${esc(p.id)}" ${p.id===w.rigId?'selected':''}>${esc(p.name)} · ${esc(p.ip)}</option>`).join('')}</select></label><p class="cal-caption"><span id="color-rig-status">${esc(w.rigMessage)}</span> Start phone previews in <a href="/" target="_blank">Prepare rig</a>.</p><div class="cal-actions">${button('Refresh cameras','refresh-cameras',w.loading)}${button('Connect leader preview','connect-rig',w.loading||!phones.some(p=>p.id===w.rigId))}</div>`:`<p class="cal-caption">Capture a reference image from this device’s camera. A shared rig preset needs a leader chosen from the rig previews above. No microphone is used.</p><div class="cal-actions">${button('Connect device camera','connect-device',w.loading)}</div>`}
     <div id="color-live-host" class="color-live-host">${!camera.video?`<div class="color-live-empty">${icon('camera',26)}<span>Connect a camera to frame the chart</span></div>`:''}</div><p id="color-camera-status" class="cal-caption" role="status">${esc(cameraMessage)}</p>
     <p id="color-applied-status" class="color-application-status" role="status"></p><div class="cal-actions">${button('Show original','toggle-original',true)}</div>
-    <div class="cal-actions">${button(w.input==='rig'?'Capture chart for shared previews':'Capture & calibrate','capture',w.loading||!camera.ready,true)}${button('Disconnect camera','disconnect',!camera.video)}</div><p class="cal-caption">${w.input==='rig'?'Takes one original frame from the leader, finds the chart, saves a shared preset and applies the same correction to every rig preview. You can then remove the chart. Keep lighting, lens, exposure and white balance consistent.':'Captures one fresh frame for the local chart comparison. Device-camera corrections are not applied to the rig.'}</p>`}`;
+    ${w.input==='rig'?`<div class="color-balance"><strong>Balance the live preview</strong><p>If the feed is dark or tinted, let the selected phone adjust its exposure, white balance and tone processing under your capture lighting. No chart is needed for this step.</p><div class="cal-actions">${button('Auto-balance leader preview','auto-balance',true)}</div><p id="color-balance-status" role="status" class="cal-caption"></p></div>`:''}
+    <div class="cal-actions">${button(w.input==='rig'?'Lock color & capture chart':'Capture & calibrate','capture',w.loading||!camera.ready,true)}${button('Disconnect camera','disconnect',!camera.video)}</div><p class="cal-caption">${w.input==='rig'?'Locks white balance on the leader if needed, captures a fresh chart frame and previews the fit. Adjust the sliders below, then apply to the selected phones.':'Captures one fresh frame for the local chart comparison. Device-camera corrections are not applied to the rig.'}</p>`}`;
 }
 
 function patchChecks() {
@@ -153,7 +194,7 @@ function patchChecks() {
 
 function markup() {
   const ready=!!w.image,fit=w.fit,quality=patchQualitySummary(w.samples);
-  return `<section class="work-section color-fleet"><div class="section-heading"><div><h2>Select a leader camera</h2><p>Use a camera with a clear view of the color chart under the capture lighting.</p></div>${button('Refresh cameras','refresh-cameras',w.loading)}</div><div class="color-fleet-chart"><label>Chart reference<select id="color-chart" ${w.loading?'disabled':''}><option value="classic" ${w.chart.id===CLASSIC24.id?'selected':''}>Calibrite ColorChecker Classic</option><option value="spyder" ${w.chart.id===SPYDER24.id?'selected':''}>Spyder Checkr 24</option><option value="custom" ${w.chart.id==='custom'?'selected':''}>${w.chart.id==='custom'?esc(w.chart.name):'Custom chart · import reference'}</option></select></label></div><div id="color-camera-overview"></div><p class="cal-caption">Check chart in this view measures a fresh, original frame from that phone. Face the mat toward the camera being checked and keep it under the same lighting. Zero percent means the neutral patch ratios match the reference.</p><div id="color-phone-sync" class="color-phone-sync"></div><div class="color-shared-summary"><p id="color-shared-status" class="color-application-status" role="status"></p>${button('Disable shared correction','disable-shared',!activeLeaderPreset()||w.loading)}</div><p class="cal-caption">The saved chart correction applies to Calibration previews. Use the phone sync above to change CameraScope settings.</p></section>
+  return `<section class="work-section color-fleet"><div class="section-heading"><div><h2>Select a leader camera</h2><p>Use a camera with a clear view of the color chart under the capture lighting.</p></div>${button('Refresh cameras','refresh-cameras',w.loading)}</div><div class="color-fleet-chart"><label>Chart reference<select id="color-chart" ${w.loading?'disabled':''}><option value="classic" ${w.chart.id===CLASSIC24.id?'selected':''}>Calibrite ColorChecker Classic</option><option value="spyder" ${w.chart.id===SPYDER24.id?'selected':''}>Spyder Checkr 24</option><option value="custom" ${w.chart.id==='custom'?'selected':''}>${w.chart.id==='custom'?esc(w.chart.name):'Custom chart · import reference'}</option></select></label></div><div id="color-camera-overview"></div><p class="cal-caption">Check chart in this view measures a fresh, original frame from that phone. Face the mat toward the camera being checked and keep it under the same lighting. Zero percent means the neutral patch ratios match the reference.</p><div id="color-phone-sync" class="color-phone-sync"></div><div class="color-shared-summary"><p id="color-shared-status" class="color-application-status" role="status"></p>${button('Disable browser correction','disable-shared',!activeLeaderPreset()||w.loading)}</div><p class="cal-caption">Use Adjust correction below to apply the chart fit and sliders to selected phones.</p></section>
   <div class="color-layout"><div class="color-setup"><section class="work-section"><div class="section-title"><span class="section-number">1</span><div><h2>Get a reference frame</h2><p>Use the same lighting and camera settings as your capture.</p></div></div>
     <div class="cal-fields color-fields"><label>Leader / reference camera<input id="color-camera" value="${esc(w.camera)}" maxlength="80" ${w.captureMeta?'readonly':''}></label><label>Run / lighting preset name<input id="color-name" value="${esc(w.name)}" maxlength="80"></label></div>
 
@@ -170,10 +211,10 @@ function markup() {
     <div class="color-fit-stats"><div><span>Usable chart patches</span><strong>${quality.total?`${quality.usable} / ${quality.total}`:fit?`${fit.accepted} / ${fit.total}`:'—'}</strong></div><div><span>Before fit · RGB error</span><strong>${fit?number(fit.before):'—'}</strong></div><div><span>After fit · RGB error</span><strong>${fit?number(fit.after):'—'}</strong></div></div>
     <p class="cal-caption">${fit?'Error is RGB RMSE (0–255) on the fitted chart, before manual adjustments. It is not an independent accuracy test.':'Calibrate to compare measured patch error. Manual adjustments work as soon as a photo is loaded.'}</p>
     <div id="color-status" class="color-status" role="status" aria-live="polite">${esc(w.message)}</div>
-    ${fit?`<div class="color-fit-method"><strong>${fit.model==='affine'?'Saved correction':'Standard color correction'}</strong><p>${fit.validation?`Withheld-patch RGB error: ${Number.isFinite(fit.validation.after)?number(fit.validation.after):'unavailable'} (before: ${number(fit.validation.before)}). Each patch is predicted by a fit that excluded it. This is not a test on a separate photo.`:'Saved legacy fit; withheld-patch checks were not recorded.'}</p>${fit.validation&&(!Number.isFinite(fit.validation.after)||fit.validation.after>12||fit.validation.after>fit.validation.before+.5)?'<p class="color-fit-warning">Poor validation: check the reference, alignment and lighting. This fit cannot be applied across the rig.</p>':''}</div><details class="cal-details"><summary>Correction details</summary><p>${fit.after>12?'The residual error is high. Check chart choice, illumination and alignment.':'Inspect the preview and test on a separate photo under the same lighting.'}</p><pre class="color-matrix">${fit.matrix.map(row=>row.map(n=>n.toFixed(5).padStart(9)).join(' ')).join('\n')}${fit.offset?.some(n=>n!==0)?`\n\nSaved offset: ${fit.offset.map(n=>n.toFixed(5)).join('  ')}`:''}</pre><p>${fit.model==='affine'?'This older preset retains its saved correction. Recalibrating uses the standard 3 × 3 matrix.':'Uses a 3 × 3 matrix in linear sRGB to correct color balance and exposure.'} This is an image correction, not a phone sensor transform.</p></details>`:''}
+    ${fit?`<div class="color-fit-method"><strong>${fit.model==='affine'?'Saved correction':'Standard color correction'}</strong><p>${fit.validation?`Withheld-patch RGB error: ${Number.isFinite(fit.validation.after)?number(fit.validation.after):'unavailable'} (before: ${number(fit.validation.before)}). Each patch is predicted by a fit that excluded it. This is not a test on a separate photo.`:'Saved legacy fit; withheld-patch checks were not recorded.'}</p>${fit.validation&&(!Number.isFinite(fit.validation.after)||fit.validation.after>12||fit.validation.after>fit.validation.before+.5)?'<p class="color-fit-warning">Poor validation: check the reference, alignment and lighting. This fit cannot be applied across the rig.</p>':''}</div><details class="cal-details"><summary>Correction details</summary><p>${fit.after>12?'The residual error is high. Check chart choice, illumination and alignment.':'Inspect the preview and test on a separate photo under the same lighting.'}</p><pre class="color-matrix">${fit.matrix.map(row=>row.map(n=>n.toFixed(5).padStart(9)).join(' ')).join('\n')}${fit.offset?.some(n=>n!==0)?`\n\nSaved offset: ${fit.offset.map(n=>n.toFixed(5)).join('  ')}`:''}</pre><p>${fit.model==='affine'?'This older preset retains its saved correction. Recalibrating uses the standard 3 × 3 matrix.':'Uses a 3 × 3 matrix in linear sRGB to correct color balance and exposure.'} Apply combines this correction with the leader’s original sensor transform.</p></details>`:''}
   </section><section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">4</span><div><h2>Adjust correction</h2><p>Preview adjustments before applying them.</p></div></div></div>
-    <div class="color-sliders">${[['amount','Calibration strength',0,100,1,'%'],['exposure','Exposure',-2,2,0.05,' EV'],['warmth','Warmth',-100,100,1,''],['tint','Tint',-100,100,1,''],['saturation','Saturation',0,200,1,'%']].map(([key,label,min,max,step,unit])=>`<label><span>${label}<output id="color-value-${key}">${w.adjust[key]}${unit}</output></span><input type="range" data-color-adjust="${key}" data-unit="${unit}" aria-label="${label}" min="${min}" max="${max}" step="${step}" value="${w.adjust[key]}" ${!ready||key==='amount'&&!fit?'disabled':''}></label>`).join('')}</div>
-    <div class="cal-actions">${button('Reset adjustments','reset',!ready)}${button('Apply to all previews','apply',true,true)}${button('Save as new run preset','save-run',!fit||w.loading||w.sample||w.captureMeta?.kind!=='rig-video')}${button('Save image profile copy','save',!fit||w.loading)}${button('Download preview PNG','png',!ready||w.loading)}</div><p class="cal-caption">Sliders first update this frozen frame. Apply adjustments updates the shared preset and every rig preview. The preset and a small reference frame are saved in this browser for future runs. Give a new run preset a name above before saving it.</p>
+    <div class="color-sliders">${[['amount','Calibration strength',0,100,1,'%'],['exposure','Exposure',-2,2,0.05,' EV'],['warmth','Warmth',-100,100,1,''],['tint','Tint',-100,100,1,''],['saturation','Saturation',0,200,1,'%']].map(([key,label,min,max,step,unit])=>`<label><span>${label}<output id="color-value-${key}">${w.adjust[key]}${unit}</output></span><input type="range" data-color-adjust="${key}" data-unit="${unit}" aria-label="${label}" min="${min}" max="${max}" step="${step}" value="${w.adjust[key]}" ${w.loading||!ready||key==='amount'&&!fit?'disabled':''}></label>`).join('')}</div>
+    <div class="cal-actions">${button('Reset adjustments','reset',!ready)}${button('Apply to leader & followers','apply',true,true)}${button('Save as new run preset','save-run',!fit||w.loading||w.sample||w.captureMeta?.kind!=='rig-video')}${button('Save image profile copy','save',!fit||w.loading)}${button('Download preview PNG','png',!ready||w.loading)}</div><p class="cal-caption">Sliders preview the change on the frozen frame. CameraScope processes live video after Apply.</p><p id="color-adjust-targets" class="cal-caption" role="status"></p>
   </section></div></div>
   <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">5</span><div><h2>Saved run presets</h2><p>Reuse a preset for the same rig and lighting, or choose a leader and recalibrate. The last active preset is restored on reload. Up to 12 presets are kept; export a portable copy for your run records.</p></div></div></div>
     ${leaderState.presets.length?`<div class="color-profile-list">${leaderState.presets.slice().reverse().map(p=>`<article><div><span class="pill ${p.id===leaderState.activeId?'success':'neutral'}">${p.id===leaderState.activeId?'Selected shared preset':'Saved run preset'}</span><h3>${esc(p.name)}</h3><p>Leader: ${esc(p.camera)} · ${new Date(p.application.appliedAt).toLocaleString()}</p></div><div class="cal-actions">${button('Load preset & frame',`load-preset:${p.id}`,w.loading)}${button('Export preset',`export-preset:${p.id}`,w.loading)}${button('Remove preset',`remove-preset:${p.id}`,w.loading)}</div></article>`).join('')}</div>`:'<div class="cal-empty"><p>No saved presets.</p></div>'}
@@ -230,7 +271,7 @@ function download(value,name,type='application/json') {
 }
 function showError(root,error) {w.message=error.message||String(error);redraw(root);}
 function redraw(root) {root=root?.isConnected?root:activeRoot;if(!root?.isConnected)return;root.innerHTML=markup();overview?.mount(root.querySelector('#color-camera-overview'));updateLiveColor();draw(root);}
-function clearReference(){w.image=null;w.source='';w.captureMeta=null;w.sample=false;w.corners=[];w.editingPresetId=null;clearFit();showOriginal=false;liveError='';}
+function clearReference(){w.image=null;w.source='';w.captureMeta=null;w.phoneApplication=null;w.sample=false;w.corners=[];w.editingPresetId=null;w.balanceNote='';clearFit();showOriginal=false;liveError='';}
 
 function cancelDetection() {if(worker){worker.terminate();worker=null;rejectDetection?.(new Error('Chart detection cancelled.'));rejectDetection=null;}}
 function findChart(image,chart) {
@@ -259,6 +300,36 @@ async function rigStatus({background=false}={}) {
   return status;
 }
 
+async function balanceLeader(root) {
+  const source=connectedSource(),generation=viewGeneration;
+  if(!camera.ready||source?.kind!=='rig-video'||source.cameraId!==w.rigId)throw new Error('Choose a live leader first.');
+  w.loading=true;showOriginal=true;w.balanceNote=`Adjusting ${source.cameraName}…`;redraw(root);
+  let outcomeUnknown=true;
+  try {
+    const response=await fetch('/api/rig/auto-balance',{method:'POST',headers:{'Content-Type':'application/json','X-Rig-Request':'1'},
+      body:JSON.stringify({ids:[source.cameraId],settings:{ip:source.ip,route:source.route}}),signal:AbortSignal.timeout(20000)});
+    const value=await response.json();
+    if(generation!==viewGeneration)return;
+    if(!response.ok){
+      outcomeUnknown=response.status>=500;
+      throw new Error(response.status===404?'Restart the local web server to enable preview balancing.':[value.error,value.next].filter(Boolean).join(' ')||'Could not adjust the leader.');
+    }
+    const result=value.results?.find(r=>r.id===source.cameraId);
+    // A set command can partly succeed even when verification fails. Don't
+    // apply an earlier frame or fit as if it represented the new settings.
+    clearReference();showOriginal=true;
+    if(value.status)w.rig=value.status;
+    if(!result?.ok)throw new Error([result?.error?.message,result?.error?.next].filter(Boolean).join(' ')||'Balance was not confirmed.');
+    w.balanceNote=`${source.cameraName}: ${result.balance.message} Watch the original feed. When brightness and neutral colors are stable, capture a fresh chart frame.`;
+  } catch(error) {
+    if(generation!==viewGeneration)return;
+    if(outcomeUnknown&&w.captureMeta){clearReference();showOriginal=true;}
+    w.balanceNote=`${error.message} Check the original preview before capturing a new chart frame.`;
+  } finally {
+    if(generation===viewGeneration){w.loading=false;redraw(root);}
+  }
+}
+
 async function calibrate(root,{capture=false,manual=false}={}) {
   if(w.loading)return;
   const generation=viewGeneration;
@@ -270,10 +341,21 @@ async function calibrate(root,{capture=false,manual=false}={}) {
         if(generation!==viewGeneration)return;
         if(!phone){camera.close();throw new Error('Selected rig preview is no longer available. Reconnect before capturing.');}
         if(camera.source?.cameraId!==id)throw new Error('Camera disconnected before capture. Reconnect and try again.');
-        camera.source=rigColorSource(phone,status);
+        const color=phone.state?.colorProcessing;
+        if(color?.awbMode!=='OFF'||color.colorCorrectionMode!=='TRANSFORM_MATRIX'){
+          if(!displayedPhoneIds.includes(id))throw new Error('Select the leader in Prepare rig before locking its white balance.');
+          rigOperation++;
+          w.message=`Locking ${phone.name} white balance before capturing the chart…`;redraw(root);
+          const locked=await syncPhoneColor(status,[id],id,false,'measure');
+          if(generation!==viewGeneration)return;
+          const updated=availableColorCameras(locked).find(p=>colorSourceKey(rigColorSource(p,locked))===colorSourceKey(source));
+          if(!updated)throw new Error('White balance was measured. Reconnect the leader preview to capture the chart.');
+          w.rig=locked;camera.source=rigColorSource(updated,locked);
+        }else camera.source=rigColorSource(phone,status);
       }
       const frame=await camera.capture();if(generation!==viewGeneration)return;
-      w.image=frame.image;w.captureMeta=frame.source;w.sample=false;w.camera=frame.source.cameraName;w.editingPresetId=null;
+      w.image=frame.image;w.captureMeta=frame.source;w.sample=false;w.camera=frame.source.cameraName;w.editingPresetId=null;w.phoneApplication=null;
+      if(!w.name.trim())w.name=`${w.camera} · ${new Date().toLocaleDateString()}`;
       w.source=`${frame.source.cameraName} · video frame · ${new Date(frame.source.capturedAt).toLocaleTimeString()}`;
       w.corners=[];w.alignment='auto';clearFit();w.message='Frame captured. Finding the chart…';redraw(root);
     }
@@ -300,7 +382,7 @@ async function readPhoto(file,root) {
       canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
       if(canvas.width<100||canvas.height<100)throw new Error('Choose a larger chart photo (at least 100 pixels on each side).');
       const c=canvas.getContext('2d',{colorSpace:'srgb'});c.drawImage(bitmap,0,0,canvas.width,canvas.height);
-      w.image=c.getImageData(0,0,canvas.width,canvas.height);w.source=file.name;w.sample=false;w.captureMeta=null;w.corners=[];w.alignment='auto';clearFit();
+      w.image=c.getImageData(0,0,canvas.width,canvas.height);w.source=file.name;w.sample=false;w.captureMeta=null;w.editingPresetId=null;w.phoneApplication=null;w.corners=[];w.alignment='auto';clearFit();
       w.message='Photo loaded. Select the matching chart, then choose Auto-calibrate.';
     }finally{bitmap.close();}
   }finally{if(generation===viewGeneration){w.loading=false;redraw(root);}}
@@ -367,6 +449,7 @@ async function command(action,root) {
   try {
     if(action==='sync-color'||action==='retry-color'){await synchronizePhones(root,action==='retry-color');return;}
     if(action.startsWith('check-chart:')){await checkCameraChart(root,action.slice(12));return;}
+    if(action==='auto-balance'){await balanceLeader(root);return;}
     if(action==='solve'||action==='capture'||action==='solve-manual'){await calibrate(root,{capture:action==='capture',manual:action==='solve-manual'});return;}
     if(action==='refresh-cameras') {w.loading=true;redraw(root);await rigStatus();if(generation!==viewGeneration)return;refreshBindings();w.loading=false;
     } else if(action==='connect-device') {w.loading=true;connecting=true;const connection=camera.connectDevice();redraw(root);await connection;if(generation!==viewGeneration)return;connecting=false;w.loading=false;
@@ -375,12 +458,12 @@ async function command(action,root) {
       const id=w.rigId;w.loading=true;connecting=true;redraw(root);const status=await rigStatus(),phone=availableColorCameras(status).find(p=>p.id===id);
       if(generation!==viewGeneration)return;
       if(!phone)throw new Error('That camera preview is unavailable. Refresh cameras and start its preview in Prepare rig.');
-      camera.connectRig(phone,status,location.origin);w.camera=phone.name;connecting=false;w.loading=false;w.message=`Selected leader: ${phone.name}. Frame the chart, then Capture chart for shared previews.`;
+      camera.connectRig(phone,status,location.origin);w.camera=phone.name;connecting=false;w.loading=false;w.message=`Selected leader: ${phone.name}. Frame the chart, then Lock color & capture chart.`;
     } else if(action==='toggle-original') {showOriginal=!showOriginal;updateLiveColor();return;
     } else if(action==='disable-shared'){leaderState=selectLeaderPreset(localStorage,null);w.message='Shared correction disabled. All rig previews show original video. Saved presets are kept.';
     } else if(action.startsWith('remove-preset:')){const id=action.slice(14);leaderState=removeLeaderPreset(localStorage,id);if(w.editingPresetId===id)w.editingPresetId=null;w.message='Preset removed. Exported copies are unchanged.';
     } else if(action.startsWith('load-preset:')){await loadPreset(action.slice(12),root);return;
-    } else if(action==='apply'||action==='save-run') {w.loading=true;redraw(root);await applyCurrentProfile({newPreset:action==='save-run'});if(generation!==viewGeneration)return;w.loading=false;
+    } else if(action==='apply'||action==='save-run') {w.loading=true;redraw(root);await applyCurrentProfile({newPreset:action==='save-run',toPhones:action==='apply'});if(generation!==viewGeneration)return;w.loading=false;
     } else if(action==='align') {w.corners=[];w.alignment='manual';clearFit();w.message='Manual fallback: mark the corner patch centers in the reference order, then Calibrate from points.';
     } else if(action==='rotate'&&w.image) {
       const source=document.createElement('canvas');source.width=w.image.width;source.height=w.image.height;source.getContext('2d').putImageData(w.image,0,0);

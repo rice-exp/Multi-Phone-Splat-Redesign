@@ -24,10 +24,12 @@ export function settingValue(value) {
   if(typeof value==='boolean')return value?'on':'off';
   return typeof value==='number' ? String(Number(value.toFixed(6))) : String(value);
 }
+export const showReadbackWarning=r=>!!r&&(r.status==='partial'
+  ?r.fields.some(f=>f.status==='unreported'&&f.key!=='autoExposureEnabled'):r.status!=='confirmed');
 export function verificationMessage(verification) {
   if(verification.status==='confirmed')return 'CameraScope requested settings confirmed by readback.';
-  const missing=verification.fields.filter(f=>f.status==='unreported').map(f=>f.label).join(', ');
-  if(verification.status==='partial')return `ISO, exposure and frame interval match. Not reported: ${missing}. These fields remain unverified.`;
+  const missing=verification.fields.filter(f=>f.status==='unreported'&&f.key!=='autoExposureEnabled').map(f=>f.label).join(', ');
+  if(verification.status==='partial')return `ISO, exposure and frame interval match CameraScope.${missing?' Not reported: '+missing+'.':''}`;
   const differences=verification.fields.filter(f=>f.status==='mismatch').map(f=>`${f.label}: requested ${settingValue(f.expected)}, reported ${settingValue(f.reported)}`).join('; ');
   return [differences?`Settings differ: ${differences}.`:'',missing?`Not reported: ${missing}.`:''].filter(Boolean).join(' ');
 }

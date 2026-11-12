@@ -13,10 +13,13 @@ Prepare rig reads `RigConfigStore` and its owned `MediaGateway` directly, querie
 | `GET /api/rig/config` | Read public local configuration, excluding executable paths. |
 | `POST /api/rig/config` | Validate/persist phone inventory, PC destination and camera defaults; restart an owned gateway if routes changed, without sending phone commands. |
 | `POST /api/rig/gateway-start` / `gateway-stop` | Manage only the redesign's gateway child process. |
-| `POST /api/rig/settings` | `{ids, settings:{iso,exposureMs,frameRate,awbMode}}`; validated, selected phones only, per-phone results. |
+| `POST /api/rig/settings` | Accepts selected IDs and edited ISO, exposure, frame rate or white balance. With `refreshPreview:true`, reopens running previews with the merged per-phone settings and checks for new frames. |
+| `POST /api/rig/color-sync`, `color-copy` | Measure and lock leader white balance or copy the current manual leader snapshot to selected followers. |
+| `POST /api/rig/color-adjust` | Accepts the selected IDs, leader, captured reference settings, chart fit and sliders. Composes a sensor transform from the original reference, verifies the leader, then sends its readback to selected followers. |
 | `POST /api/rig/sync` | `{ids}`; one successful CLI result required per selected host. |
 | `POST /api/rig/preview-start` | `{ids}`; configure selected phones with trusted gateway route ports and `pcIp`, enable streaming and start a stopped pipeline. Verify state independently. |
 | `POST /api/rig/preview-stop` | `{ids}`; disable streaming on selected phones without sending `capture:false`. Verify state independently. |
+| `POST /api/rig/auto-balance` | `{ids:[leaderId],settings:{ip,route}}`; request automatic exposure, unlocked auto white balance, and camera color/tone processing on one matching live leader. Report confirmed, unreported and mismatched modes from a separate state read. |
 
 `live-preview.js` creates receive-only video peers and gathers ICE before posting SDP to `http://LAB-COMPUTER:8889/cam-N/whep`. It uses no external STUN servers or media permissions. The WHEP session Location is restricted to the gateway origin and route before cleanup DELETE. Failed connections and missing frames reconnect with a capped exponential delay; phone commands are never automatically retried. Decoded/displayed frame progress drives the Live label; gateway readiness and successful negotiation alone do not. Peers, timers and gateway sessions are released on route loss, retry, removed inventory and page exit. The operator's reachable hostname is used for the local gateway.
 

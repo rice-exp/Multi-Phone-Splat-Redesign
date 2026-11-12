@@ -2,19 +2,49 @@ import {icon,esc} from './icons.js';
 import {workflowNavigation,centerWorkflow,workspaceBrand,workspaceHeader} from './workflow.js';
 import {observedPhones,selectionFor,colorStatus,configurationStatus} from './rig-model.js';
 import {LivePreview,previewEndpoint} from './live-preview.js';
-import {verificationMessage,settingValue} from './settings-readback.js';
+import {verificationMessage,settingValue,showReadbackWarning} from './settings-readback.js';
+import {reportedManualSettings,effectiveRate,validCameraNumber} from './manual-camera-settings.js';
 
 const app=document.getElementById('app'), overlays=document.getElementById('overlay-root');
 const byId=id=>document.getElementById(id);
 const modes=['OFF','AUTO','INCANDESCENT','FLUORESCENT','WARM_FLUORESCENT','DAYLIGHT','CLOUDY_DAYLIGHT','TWILIGHT','SHADE'];
 let status={connected:false,phones:[],events:[],checkedAt:0}, selection={}, busy=false, loading=true, connected=true, pollBusy=false, reviewed=null, lastResult=null;
-let settingsDirty=false, initializedSettings=false, toastTimer, dialogTrigger;
+let toastTimer,dialogTrigger;
+const dirtyFields=new Set(),fields={iso:'rig-iso',exposureMs:'rig-exposure',frameRate:'rig-fps',awbMode:'rig-awb'};
+const fmt=n=>Number(n.toFixed(3));
+function draftSettings(){
+  return Object.fromEntries([...dirtyFields].map(k=>[k,k==='awbMode'?byId(fields[k]).value:Number(byId(fields[k]).value)]));
+}
+function syncSettingsForm(chosen) {
+  const live=chosen.filter(p=>p.responding).map(p=>reportedManualSettings(p.state));
+  for(const [key,id] of Object.entries(fields)){
+    if(dirtyFields.has(key))continue;
+    const el=byId(id),values=live.map(s=>s[key]),common=values.length&&values.every(v=>v===values[0])?values[0]:null;
+    const next=common==null?'':String(common);if(el.value!==next)el.value=next;
+    el.placeholder=values.length?'Varies by phone':'No live value';
+  }
+  const draft=draftSettings(),notes=new Set();
+  for(const state of live){
+    const target={...state,...draft};
+    if(target.exposureMs>0&&target.frameRate>0&&target.exposureMs>1000/target.frameRate+0.000001)
+      notes.add(`${target.exposureMs} ms needs a longer frame: ${fmt(effectiveRate(target.exposureMs,target.frameRate))} FPS will be sent.`);
+  }
+  byId('rig-settings-source').textContent=status.connected&&status.manualSettingsVersion!==2?'Restart the local web server to enable live settings.':
+    [...notes,dirtyFields.size?'Edits ready to apply.':live.length?'Current settings reported by the selected phones.':'Select a responding phone.'].join(' ');
+  byId('rig-review-settings').disabled=!canOperate()||!dirtyFields.size||status.manualSettingsVersion!==2;
+}
+function liveResult(live){
+  if(!live)return '';
+  const timing=live.intervalMs==null?'':` Latest frame spacing: ${fmt(live.intervalMs)} ms (~${fmt(1000/live.intervalMs)} FPS).`;
+  return `<p class="rig-caption">${live.fresh?'New frames observed after applying settings.':'Settings were sent; new camera frames could not be verified.'}${timing}</p>`+
+    live.overrides.map(line=>`<p class="text-warning">${esc(line)}</p>`).join('');
+}
 const players=new Map();
 const resultLabel=action=>action==='settings'?'Settings results':action==='sync'?'Clock check results':'Wireless preview results';
 const successLabel=(action,result)=>action==='settings'&&result?.verification?verificationMessage(result.verification):action==='sync'?'Clock offset measured.':action==='preview-start'?'Wireless stream enabled. Waiting for browser video.':'Wireless stream disabled. Camera pipeline was not stopped.';
 function verificationTable(verification){
   if(!verification)return '';
-  return `<details class="rig-verification" ${verification.status!=='confirmed'?'open':''}><summary>Requested and reported settings</summary><div class="rig-verification-scroll"><table><thead><tr><th>Setting</th><th>Requested</th><th>Reported</th><th>Check</th></tr></thead><tbody>${verification.fields.map(field=>`<tr><th scope="row">${esc(field.label)}</th><td>${esc(settingValue(field.expected))}</td><td>${esc(settingValue(field.reported))}</td><td class="${field.status==='match'?'text-success':'text-warning'}">${field.status==='match'?'Matches':field.status==='unreported'?'Unverified':'Differs'}</td></tr>`).join('')}</tbody></table></div><p class="rig-caption">Reported values are CameraScope’s requested state. Device hardware may override them; inspect the phone’s recent messages and phase report for sensor behavior.</p></details>`;
+  return `<details class="rig-verification" ${showReadbackWarning(verification)?'open':''}><summary>Requested and reported settings</summary><div class="rig-verification-scroll"><table><thead><tr><th>Setting</th><th>Requested</th><th>Reported</th><th>Check</th></tr></thead><tbody>${verification.fields.filter(f=>f.key!=='autoExposureEnabled'||f.status!=='unreported').map(field=>`<tr><th scope="row">${esc(field.label)}</th><td>${esc(settingValue(field.expected))}</td><td>${esc(settingValue(field.reported))}</td><td class="${field.status==='match'?'text-success':'text-warning'}">${field.status==='match'?'Matches':field.status==='unreported'?'Unverified':'Differs'}</td></tr>`).join('')}</tbody></table></div><p class="rig-caption">Reported values are CameraScope’s requested state. Device hardware may override them; inspect the phone’s recent messages and phase report for sensor behavior.</p></details>`;
 }
 try { selection=JSON.parse(localStorage.getItem('rig-selection-v1')||'{}')||{}; } catch {}
 const phones=()=>observedPhones(status);
@@ -43,10 +73,10 @@ function renderShell(){
       <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">1</span><div><h2>Select cameras</h2><p>Selection controls settings, clock checks and stream commands. Deselect phones to exclude them.</p></div></div><div class="section-tools">${button('Select all','select-all','secondary small')}${button('Deselect all','deselect-all','secondary small')}</div></div>
         <div class="rig-preview-controls">${button('Start selected previews','review-preview-start','primary','id="rig-preview-start"')}${button('Stop selected streams','review-preview-stop','secondary','id="rig-preview-stop"')}<span class="rig-caption">Wireless video from CameraScope. Stream controls affect selected phones.</span></div>
         <div id="rig-cameras" class="camera-grid"></div><div class="network-note">${icon('wifi',16)}<span id="rig-preview-note">Previews use the local redesign’s MediaMTX gateway.</span>${button('Preview setup','previews','text-button')}</div></section>
-      <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">2</span><div><h2>Camera settings</h2><p>Review manual exposure and white balance before applying to selected phones.</p></div></div></div>
-        <form id="rig-settings"><div class="rig-fields"><label>ISO<input id="rig-iso" type="number" min="25" max="12800" step="1" required></label><label>Exposure (ms)<input id="rig-exposure" type="number" min="0.1" max="1000" step="0.1" required></label><label>Frame rate (fps)<input id="rig-fps" type="number" min="1" max="120" step="1" required></label><label>White balance<select id="rig-awb" required><option value="">Select mode</option>${modes.map(mode=>`<option value="${mode}">${mode.replaceAll('_',' ')}</option>`).join('')}</select></label></div>
-        <div class="rig-settings-footer"><p id="rig-settings-source">Waiting for the local rig’s saved settings.</p><button class="button secondary" type="submit" id="rig-review-settings">Review changes</button></div></form>
-        <p class="rig-caption">Live previews show current output. The review shows values only; it does not alter camera output. Readback verifies CameraScope’s requested settings, not measured sensor output.</p><div id="rig-command-results" aria-live="polite"></div></section>
+      <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">2</span><div><h2>Camera settings</h2><p>Edit the live settings, then apply them to the selected phones.</p></div></div></div>
+        <form id="rig-settings"><div class="rig-fields"><label>ISO<input id="rig-iso" type="number" min="1" step="1"></label><label>Exposure (ms)<input id="rig-exposure" type="number" min="0" step="any"></label><label>Frame rate (fps)<input id="rig-fps" type="number" min="0" step="any"></label><label>White balance<select id="rig-awb"><option value="">Varies / choose mode</option>${modes.map(mode=>`<option value="${mode}">${mode.replaceAll('_',' ')}</option>`).join('')}</select></label></div>
+        <div class="rig-settings-footer"><p id="rig-settings-source">Waiting for phone settings.</p><button class="button primary" type="submit" id="rig-review-settings">Apply to selected phones</button></div></form>
+        <p class="rig-caption">Apply sends manual settings to the selected phones. Their running previews briefly reconnect so CameraScope opens them with the new settings. Each phone limits values to what its camera supports.</p><div id="rig-command-results" aria-live="polite"></div></section>
       <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">3</span><div><h2>Check clock offsets</h2><p>Measure each selected phone’s clock offset relative to the lab computer.</p></div></div>${button('Check clocks','sync','secondary','id="rig-sync"')}</div><p id="rig-sync-summary"></p><p class="rig-caption">Clock results expire after 60 seconds. Sensor phase alignment and capture timing must be checked again when capture is connected.</p></section>
       <section class="work-section"><div class="section-heading"><div class="section-title"><span class="section-number">4</span><div><h2>Participant display</h2><p>Live capture status will be connected with the Capture tab.</p></div></div>${pill('Integration pending')}</div><p class="rig-caption">The participant display stays inactive until capture status is connected.</p></section>
       <div class="step-footer"><span class="footer-hint">Preparation does not start a capture.</span><div class="next-action"><small>Camera geometry solving is not connected yet.</small><a class="button primary" href="/calibration">Open color calibration ${icon('arrow',17)}</a></div></div>
@@ -80,7 +110,7 @@ function updateStatus(){
       card.querySelector('strong').textContent=phone.name;card.querySelector('.rig-ip').textContent=phone.ip;
       const pipeline=phone.responding?phone.state?.isCapturing:null;
       card.querySelector('.rig-phone-status').innerHTML=pill(!phone.responding?'Not responding':pipeline===true?'Running':pipeline===false?'Camera stopped':'Activity unknown',pipeline===true?'success':'warning');
-      card.querySelector('.rig-phone-settings').textContent=phone.responding?`ISO ${phone.state?.iso??'—'} · ${phone.state?.exposureMs??'—'} ms · WB ${phone.state?.colorProcessing?.awbMode??'—'}`:'Settings unavailable';
+      card.querySelector('.rig-phone-settings').textContent=phone.responding?`ISO ${phone.state?.iso??'—'} · ${phone.state?.exposureMs??'—'} ms · ${phone.state?.frameDurationMs>0?fmt(1000/phone.state.frameDurationMs):'—'} requested FPS · WB ${phone.state?.colorProcessing?.awbMode??'—'}`:'Settings unavailable';
       const requested=phone.settings?.requested||status.requested;
       const color=colorStatus(phone,requested?.awbMode), config=configurationStatus(phone,requested);
       card.querySelector('.rig-phone-checks').innerHTML=`${pill(config.label,config.tone)}${pill(color.label,color.tone)}${pill(phone.sync?'Clock checked':'Clock not checked',phone.sync?'success':'warning')}`;
@@ -105,20 +135,16 @@ function updateStatus(){
     }
     existing.forEach((card,id)=>{players.get(id)?.close();players.delete(id);card.remove();});
   }
-  if(!initializedSettings&&!settingsDirty&&status.requested){
-    for(const [id,key] of [['rig-iso','iso'],['rig-exposure','exposureMs'],['rig-fps','frameRate'],['rig-awb','awbMode']])byId(id).value=status.requested[key]??'';
-    initializedSettings=true;
-  }
-  byId('rig-settings-source').textContent=settingsDirty?'Unapplied changes':initializedSettings?'Starting values from the local rig’s saved configuration.':'Waiting for the local rig’s saved settings.';
+  syncSettingsForm(chosen);
   byId('rig-refresh').disabled=busy||pollBusy;
-  byId('rig-review-settings').disabled=!canOperate();byId('rig-sync').disabled=!canOperate();
+  byId('rig-sync').disabled=!canOperate();
   byId('rig-preview-start').disabled=!canOperate()||!status.gateway?.running;
   byId('rig-preview-stop').disabled=!canOperate();
   document.querySelectorAll('#rig-settings input,#rig-settings select,[data-rig-action="select-all"],[data-rig-action="deselect-all"]').forEach(el=>el.disabled=busy||!!status.busy);
   byId('rig-sync').textContent=busy&&status.busy==='sync'?'Checking clocks…':'Check clocks';
   byId('rig-sync-summary').textContent=`${chosen.filter(p=>p.sync).length} of ${chosen.length} selected phones have a fresh successful clock-sync result.`;
   byId('rig-preview-note').textContent=status.gateway?.running?`Gateway available · Video destination ${status.destination||'not configured'}. A Live label confirms frames in this browser.`:'Preview gateway unavailable. Open Connection setup to start it.';
-  if(lastResult)byId('rig-command-results').innerHTML=`<div class="rig-result-list"><strong>${resultLabel(lastResult.action)}</strong>${lastResult.results.map(r=>`<p class="${r.ok&&r.verification?.status!=='partial'?'text-success':'text-warning'}">${esc(r.id)}: ${esc(r.ok?successLabel(lastResult.action,r):`${r.error.message} ${r.error.next}`)}</p>${verificationTable(r.verification)}`).join('')}${lastResult.action==='settings'?'<p class="rig-caption">Results record the last command. Check live state for later changes. Saved camera defaults are unchanged.</p>':''}</div>`;
+  if(lastResult)byId('rig-command-results').innerHTML=`<div class="rig-result-list"><strong>${resultLabel(lastResult.action)}</strong>${lastResult.results.map(r=>`<p class="${r.ok&&!showReadbackWarning(r.verification)&&(!r.live||r.live.fresh&&!r.live.overrides.length)?'text-success':'text-warning'}">${esc(r.id)}: ${esc(r.ok?successLabel(lastResult.action,r):`${r.error.message} ${r.error.next}`)}</p>${liveResult(r.live)}${verificationTable(r.verification)}`).join('')}${lastResult.action==='settings'?'<p class="rig-caption">Results record the last command. Check live state for later changes. Saved camera defaults are unchanged.</p>':''}</div>`;
 }
 async function request(url,value){const response=await fetch(url,{...(value===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Rig-Request':'1'},body:JSON.stringify(value)}),signal:AbortSignal.timeout(value===undefined?12000:120000)});const result=await response.json();if(!response.ok)throw Object.assign(new Error(result.error||`HTTP ${response.status}`),result);return result;}
 async function refresh(manual=false){
@@ -129,21 +155,21 @@ async function refresh(manual=false){
 }
 async function operate(action,settings,ids=selected().map(p=>p.id)){
   if(!canOperate())return;closeDialog();busy=true;status.busy=action;updateStatus();
-  try{const result=await request(`/api/rig/${action}`,{ids,settings});lastResult={action,results:result.results};status=result.status;status.busy=null;
-    if(action==='settings'&&result.ok)settingsDirty=false;
-    const partial=result.results.some(r=>r.verification?.status==='partial');
-    toast(!result.ok?'Some phones need attention. Review the per-phone results.':partial?'Settings sent. Some fields are unreported; review verification details.':'Command completed. Review the per-phone results.');
+  try{const result=await request(`/api/rig/${action}`,{ids,settings,...(action==='settings'?{refreshPreview:true}:{})});lastResult={action,results:result.results};status=result.status;status.busy=null;
+    if(action==='settings'&&result.ok)dirtyFields.clear();
+    const attention=result.results.some(r=>showReadbackWarning(r.verification)||r.live&&(!r.live.fresh||r.live.overrides.length));
+    toast(!result.ok||attention?'Check the per-phone settings results.':'Command completed. Review the per-phone results.');
     if(!result.ok)dialog('Some phones need attention',result.results.filter(r=>!r.ok).map(r=>`<p><strong>${esc(r.id)}</strong>: ${esc(r.error.message)}</p><p>${esc(r.error.next)}</p>${verificationTable(r.verification)}`).join(''));
   }catch(error){dialog('Rig operation could not complete',`<p>${esc(error.message)}</p><p>${esc(error.next||'Read status before retrying. A timed-out command may still be running on the server.')}</p>`);}
   finally{busy=false;status.busy=null;await refresh(true);}
 }
-function reviewSettings(){
-  if(!canOperate()||!byId('rig-settings').reportValidity())return;
-  const value={iso:Number(byId('rig-iso').value),exposureMs:Number(byId('rig-exposure').value),frameRate:Number(byId('rig-fps').value),awbMode:byId('rig-awb').value};
-  if(value.exposureMs>1000/value.frameRate){toast('Exposure must not exceed the requested frame interval.');return;}
-  const chosen=selected();
-  dialog('Review camera settings',`<p>Apply to ${chosen.length} selected phones: ${esc(chosen.map(p=>p.name).join(', '))}.</p><dl class="issue-facts"><dt>ISO</dt><dd>${value.iso}</dd><dt>Exposure</dt><dd>${value.exposureMs} ms</dd><dt>Requested rate</dt><dd>${value.frameRate} fps</dd><dt>White balance</dt><dd>${esc(value.awbMode)}</dd></dl><p>Changes selected phones only. Auto exposure and white balance lock are requested off. Unreported fields remain unverified. Readback verifies CameraScope settings; measured sensor output is not verified.</p><p class="rig-caption">CameraScope records requested settings independently of the saved defaults.</p>`,`${button('Cancel','close')}${button('Apply to selected phones','apply','primary')}`);
-  reviewed={value,ids:chosen.map(p=>p.id)};
+function applyEditedSettings(){
+  if(!canOperate()||status.manualSettingsVersion!==2||!dirtyFields.size||!byId('rig-settings').reportValidity())return;
+  const patch=draftSettings();
+  for(const [k,n] of Object.entries(patch)){
+    if(k==='awbMode'? !modes.includes(n):!validCameraNumber(k,n)){toast(`Enter a valid ${k} before applying.`);return;}
+  }
+  operate('settings',patch,selected().map(p=>p.id));
 }
 function reviewPreview(enable){
   if(!canOperate())return;
@@ -160,7 +186,7 @@ async function setup(){
       <div class="rig-gateway-panel"><strong>Preview gateway: ${status.gateway?.running?'running':status.gateway?.processRunning?'needs attention':'stopped'}</strong><p>${esc(status.gateway?.error?.message||'MediaMTX converts the phones’ H.264 UDP streams to browser video.')}</p>${button('Start gateway','gateway-start','secondary','type="button"')}${button('Stop gateway','gateway-stop','secondary','type="button"')}<details><summary>Gateway logs</summary><pre>${esc((status.gateway?.logs||[]).join('\n')||'No gateway logs yet.')}</pre></details></div>
       <form id="rig-connection"><label class="rig-config-destination">Computer destination IP<input id="config-pc-ip" value="${esc(config.pcIp)}" required><small>Use this computer’s Wi-Fi or Ethernet IPv4 address. Phones send video here.</small></label>
       <h3>Phones</h3><div id="rig-config-phones">${config.phones.map(configPhoneRow).join('')}</div>${button('Add camera','add-config-phone','secondary small','type="button"')}
-      <h3>Saved camera defaults</h3><div class="rig-fields"><label>ISO<input id="config-iso" type="number" value="${config.iso}" min="25" max="12800" step="1" required></label><label>Exposure (ms)<input id="config-exposure" type="number" value="${config.exposureMs}" min="0.1" max="1000" step="0.1" required></label><label>Frame rate (fps)<input id="config-fps" type="number" value="${config.frameRate}" min="1" max="120" step="1" required></label><label>White balance<select id="config-awb">${modes.map(mode=>`<option ${mode===config.colorProcessing.awbMode?'selected':''}>${mode}</option>`).join('')}</select></label></div></form>
+      <h3>Saved camera defaults</h3><p>These values are saved on the laptop. Use Camera settings in Prepare rig to change the phones. A long exposure extends the frame interval (100 ms allows up to 10 FPS).</p><div class="rig-fields"><label>ISO<input id="config-iso" type="number" value="${config.iso}" min="1" step="1" required></label><label>Exposure (ms)<input id="config-exposure" type="number" value="${config.exposureMs}" min="0" step="any" required></label><label>Frame rate (fps)<input id="config-fps" type="number" value="${config.frameRate}" min="0" step="any" required></label><label>White balance<select id="config-awb">${modes.map(mode=>`<option ${mode===config.colorProcessing.awbMode?'selected':''}>${mode}</option>`).join('')}</select></label></div></form>
       <p>Saving changes the local configuration. Changing phone routes restarts the gateway and may interrupt views; it sends no commands to the phones. Finish recordings before saving.</p><p class="rig-caption">Configuration is saved in <code>.camerascope/rig-config.json</code>. Clock checks use the independent CameraScope Python CLI; set its installation paths in this file or with CAMERASCOPE_ROOT / CAMERASCOPE_PYTHON. To import an old installation, use <code>npm run import-config -- PATH-TO-webapp-config.json --replace</code> after backing up the local file.</p>`,`${button('Cancel','close')}${button('Save configuration','save-config','primary')}`);
   }catch(error){dialog('Configuration unavailable',`<p>${esc(error.message)}</p><p>${esc(error.next||'Check the local rig configuration file and retry.')}</p>`);}
 }
@@ -169,7 +195,7 @@ async function setupOperation(action,value){
   closeDialog();busy=true;status.busy=action;updateStatus();
   try {
     const result=await request(`/api/rig/${action}`,value||{});status=result.status;status.busy=null;
-    if(action==='config'){initializedSettings=false;settingsDirty=false;lastResult=null;}
+    if(action==='config'){dirtyFields.clear();lastResult=null;}
     toast(action==='config'?'Configuration saved. Start selected previews to route video.':'Gateway command completed.');
   }catch(error){dialog('Setup could not complete',`<p>${esc(error.message)}</p><p>${esc(error.next||'Read status before retrying.')}</p>`);}
   finally{busy=false;status.busy=null;await refresh(true);}
@@ -179,13 +205,13 @@ function saveConfig(){
   const phones=[...byId('rig-config-phones').children].map(row=>Object.fromEntries(['id','name','ip','enabled'].map(key=>{const input=row.querySelector(`[data-field="${key}"]`);return [key,key==='enabled'?input.checked:input.value.trim()];})));
   setupOperation('config',{phones,pcIp:byId('config-pc-ip').value.trim(),iso:Number(byId('config-iso').value),exposureMs:Number(byId('config-exposure').value),frameRate:Number(byId('config-fps').value),colorProcessing:{awbMode:byId('config-awb').value,awbLock:false}});
 }
-function phoneDetails(id){const phone=phones().find(p=>p.id===id);if(!phone)return;dialog(phone.name,`<dl class="issue-facts"><dt>IP address</dt><dd>${esc(phone.ip)}</dd><dt>Connection</dt><dd>${phone.responding?'CameraScope responded.':esc(phone.error?.message||'No current status.')}</dd><dt>Next step</dt><dd>${esc(phone.error?.next||'Check the live preview and review settings before checking clocks.')}</dd><dt>Camera pipeline</dt><dd>${phone.responding&&typeof phone.state?.isCapturing==='boolean'?(phone.state.isCapturing?'Running':'Stopped'):'Unknown'}. This is not a recording indicator.</dd><dt>Reported settings</dt><dd>${phone.responding?esc(`ISO ${phone.state?.iso??'unknown'} · exposure ${phone.state?.exposureMs??'unknown'} ms · frame interval ${phone.state?.frameDurationMs??'unknown'} ms · auto exposure ${phone.state?.autoExposureEnabled??'unknown'}`):'Unavailable'}</dd><dt>Clock</dt><dd>${phone.sync?`Offset measured ${Math.floor((Date.now()-phone.sync.checkedAt)/1000)} seconds ago. Offset: ${phone.sync.report?.summary?.selectedOffsetNs!=null?esc((phone.sync.report.summary.selectedOffsetNs/1e6).toFixed(3))+' ms':'not reported'}; estimated error bound: ${phone.sync.report?.summary?.selectedErrorBoundNs!=null?esc((phone.sync.report.summary.selectedErrorBoundNs/1e6).toFixed(3))+' ms':'not reported'}.`:'No fresh clock-sync result.'} Sensor alignment is not checked here.</dd><dt>Preview</dt><dd>${phone.previewReady?'MediaMTX reports an active stream. The Live label on the card independently confirms browser frame progress.':'No active stream reported by MediaMTX.'}</dd></dl><details class="technical-details"><summary>CameraScope state and command results</summary><pre>${esc(JSON.stringify(phone,null,2))}</pre></details>`);}
+function phoneDetails(id){const phone=phones().find(p=>p.id===id);if(!phone)return;dialog(phone.name,`<dl class="issue-facts"><dt>IP address</dt><dd>${esc(phone.ip)}</dd><dt>Connection</dt><dd>${phone.responding?'CameraScope responded.':esc(phone.error?.message||'No current status.')}</dd><dt>Next step</dt><dd>${esc(phone.error?.next||'Check the live preview and review settings before checking clocks.')}</dd><dt>Camera pipeline</dt><dd>${phone.responding&&typeof phone.state?.isCapturing==='boolean'?(phone.state.isCapturing?'Running':'Stopped'):'Unknown'}. This is not a recording indicator.</dd><dt>Reported settings</dt><dd>${phone.responding?esc(`ISO ${phone.state?.iso??'unknown'} · exposure ${phone.state?.exposureMs??'unknown'} ms · frame interval ${phone.state?.frameDurationMs??'unknown'} ms${phone.state?.autoExposureEnabled==null?'':' · auto exposure '+phone.state.autoExposureEnabled}`):'Unavailable'}</dd><dt>Clock</dt><dd>${phone.sync?`Offset measured ${Math.floor((Date.now()-phone.sync.checkedAt)/1000)} seconds ago. Offset: ${phone.sync.report?.summary?.selectedOffsetNs!=null?esc((phone.sync.report.summary.selectedOffsetNs/1e6).toFixed(3))+' ms':'not reported'}; estimated error bound: ${phone.sync.report?.summary?.selectedErrorBoundNs!=null?esc((phone.sync.report.summary.selectedErrorBoundNs/1e6).toFixed(3))+' ms':'not reported'}.`:'No fresh clock-sync result.'} Sensor alignment is not checked here.</dd><dt>Preview</dt><dd>${phone.previewReady?'MediaMTX reports an active stream. The Live label on the card independently confirms browser frame progress.':'No active stream reported by MediaMTX.'}</dd></dl><details class="technical-details"><summary>CameraScope state and command results</summary><pre>${esc(JSON.stringify(phone,null,2))}</pre></details>`);}
 function logs(){dialog('Rig activity log',`<p>Connection changes and commands from this server session.</p><label class="rig-log-filter">Filter<input id="rig-log-filter" type="search" placeholder="Phone, message or error code"></label><div id="rig-log-events">${[...(status.events||[])].reverse().map(event=>`<article class="rig-log-event"><strong class="${event.level==='success'?'text-success':event.level==='info'?'':'text-warning'}">${esc(event.message)}</strong><small>${esc(new Date(event.time).toLocaleTimeString())} · ${esc(event.code)}</small>${event.detail?`<p>${esc(event.detail)}</p>`:''}<details><summary>Technical details</summary><pre>${esc(JSON.stringify(event,null,2))}</pre></details></article>`).join('')||'<p>No rig events recorded.</p>'}</div>`);}
 const actions={refresh:()=>refresh(true),'select-all':()=>{if(busy||status.busy)return;selection=Object.fromEntries(phones().map(p=>[p.id,true]));persistSelection();updateStatus();},'deselect-all':()=>{if(busy||status.busy)return;selection=Object.fromEntries(phones().map(p=>[p.id,false]));persistSelection();updateStatus();},close:closeDialog,setup,logs,
   'save-config':saveConfig,'gateway-start':()=>setupOperation('gateway-start'),'gateway-stop':()=>setupOperation('gateway-stop'),
   'remove-config-phone':el=>el.closest('.rig-config-phone').remove(),
   'add-config-phone':()=>{const rows=byId('rig-config-phones');if(rows.children.length>=64)return;const used=new Set([...rows.querySelectorAll('[data-field="id"]')].map(el=>el.value));let index=1;while(used.has(`cam-${index}`))index++;rows.insertAdjacentHTML('beforeend',configPhoneRow({id:`cam-${index}`,name:`CAM ${String(index).padStart(2,'0')}`,ip:'',enabled:true}));},
-  apply:()=>{if(reviewed)operate('settings',reviewed.value,reviewed.ids);},sync:()=>operate('sync'),phone:el=>phoneDetails(el.dataset.id),
+  sync:()=>operate('sync'),phone:el=>phoneDetails(el.dataset.id),
   'review-preview-start':()=>reviewPreview(true),'review-preview-stop':()=>reviewPreview(false),
   'preview-start':()=>{if(reviewed)operate('preview-start',undefined,reviewed.ids);},'preview-stop':()=>{if(reviewed)operate('preview-stop',undefined,reviewed.ids);},
   'retry-preview':el=>{const card=el.closest('[data-phone-id]');players.get(card.dataset.phoneId)?.close();players.delete(card.dataset.phoneId);delete card.querySelector('.camera-preview').dataset.path;updateStatus();},
@@ -194,8 +220,8 @@ const actions={refresh:()=>refresh(true),'select-all':()=>{if(busy||status.busy)
 };
 document.addEventListener('click',event=>{const el=event.target.closest('[data-rig-action]');if(el&&!el.disabled)actions[el.dataset.rigAction]?.(el);});
 document.addEventListener('change',event=>{if(event.target.dataset.phone){selection[event.target.dataset.phone]=event.target.checked;persistSelection();updateStatus();}});
-document.addEventListener('input',event=>{if(event.target.closest('#rig-settings')){settingsDirty=true;byId('rig-settings-source').textContent='Unapplied changes';}if(event.target.id==='rig-log-filter'){const query=event.target.value.toLowerCase();byId('rig-log-events').querySelectorAll('article').forEach(el=>el.hidden=!el.textContent.toLowerCase().includes(query));}});
-renderShell();centerWorkflow();byId('rig-settings').addEventListener('submit',event=>{event.preventDefault();reviewSettings();});updateStatus();refresh();
+document.addEventListener('input',event=>{if(event.target.closest('#rig-settings')){const key=Object.keys(fields).find(k=>fields[k]===event.target.id);if(key)dirtyFields.add(key);syncSettingsForm(selected());}if(event.target.id==='rig-log-filter'){const query=event.target.value.toLowerCase();byId('rig-log-events').querySelectorAll('article').forEach(el=>el.hidden=!el.textContent.toLowerCase().includes(query));}});
+renderShell();centerWorkflow();byId('rig-settings').addEventListener('submit',event=>{event.preventDefault();applyEditedSettings();});updateStatus();refresh();
 setInterval(()=>{updateStatus();refresh();},5000);
 window.addEventListener('pagehide',()=>{players.forEach(player=>player.close());players.clear();document.querySelectorAll('.rig-camera-preview').forEach(el=>delete el.dataset.path);});
 window.addEventListener('pageshow',()=>updateStatus());

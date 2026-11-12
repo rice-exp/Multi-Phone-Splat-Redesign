@@ -1,4 +1,4 @@
-import {settingsVerification} from './settings-readback.js';
+import {settingsVerification,showReadbackWarning} from './settings-readback.js';
 
 export const FRESH_MS = 20000;
 export function observedPhones(status, now = Date.now()) {
@@ -22,6 +22,7 @@ export function colorStatus(phone, requested) {
 export function configurationStatus(phone,requested) {
   const actual=phone.responding?phone.state:null;
   if(!actual||!requested)return {label:'Configuration unknown',tone:'warning'};
-  const {status}=settingsVerification(actual,requested);
+  const report=settingsVerification(actual,requested),{status}=report;
+  if(status==='partial'&&!showReadbackWarning(report))return {label:'Reported settings match',tone:'success'};
   return {label:status==='confirmed'?'Configuration matches':status==='partial'?'Settings partly verified':status==='unavailable'?'Configuration unknown':'Configuration differs',tone:status==='confirmed'?'success':'warning'};
 }

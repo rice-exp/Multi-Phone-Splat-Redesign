@@ -11,19 +11,23 @@ export function colorSourceKey(source) {
   if(source?.kind==='device-video'&&source.settings?.deviceId)return JSON.stringify(['device',source.settings.deviceId]);
   return null;
 }
+export const referenceSettings=state=>pick(state,['cameraId','selectedCameraId','physicalCameraId','lensFacing','focalLength','zoomRatio','iso','exposureMs','frameDurationMs','autoExposureEnabled','colorProcessing']);
 export function colorSettingsKey(source) {
   const settings=source?.kind==='rig-video'
-    ?pick(source.reportedSettings,['cameraId','selectedCameraId','physicalCameraId','lensFacing','focalLength','zoomRatio','iso','exposureMs','frameDurationMs','autoExposureEnabled','colorProcessing'])
+    ?referenceSettings(source.reportedSettings)
     :pick(source?.settings,['deviceId','width','height','facingMode','resizeMode','exposureMode','exposureTime','iso','whiteBalanceMode','colorTemperature','zoom','brightness','contrast','saturation']);
   return JSON.stringify(stable(settings));
 }
+export function validCorrection(fit,adjustments) {
+  return Array.isArray(fit?.matrix)&&fit.matrix.length===3&&fit.matrix.every(row=>Array.isArray(row)&&row.length===3&&row.every(v=>Number.isFinite(v)&&Math.abs(v)<=8))
+    &&(fit.offset===undefined||Array.isArray(fit.offset)&&fit.offset.length===3&&fit.offset.every(v=>Number.isFinite(v)&&Math.abs(v)<=0.5))
+    &&(fit.model===undefined||['linear','affine'].includes(fit.model))
+    &&(fit.model!=='affine'||Array.isArray(fit.offset))
+    &&[['amount',0,100],['exposure',-2,2],['warmth',-100,100],['tint',-100,100],['saturation',0,200]].every(([k,min,max])=>Number.isFinite(adjustments?.[k])&&adjustments[k]>=min&&adjustments[k]<=max);
+}
 export function validColorProfile(profile) {
-  return profile?.pipeline==='decoded-sRGB-image'&&profile.appliedToHardware===false&&typeof profile.id==='string'
-    &&Array.isArray(profile.fit?.matrix)&&profile.fit.matrix.length===3&&profile.fit.matrix.every(row=>Array.isArray(row)&&row.length===3&&row.every(v=>Number.isFinite(v)&&Math.abs(v)<=8))
-    &&(profile.fit.offset===undefined||Array.isArray(profile.fit.offset)&&profile.fit.offset.length===3&&profile.fit.offset.every(v=>Number.isFinite(v)&&Math.abs(v)<=0.5))
-    &&(profile.fit.model===undefined||['linear','affine'].includes(profile.fit.model))
-    &&(profile.fit.model!=='affine'||Array.isArray(profile.fit.offset))
-    &&[['amount',0,100],['exposure',-2,2],['warmth',-100,100],['tint',-100,100],['saturation',0,200]].every(([k,min,max])=>Number.isFinite(profile.adjustments?.[k])&&profile.adjustments[k]>=min&&profile.adjustments[k]<=max);
+  return profile?.pipeline==='decoded-sRGB-image'&&typeof profile.id==='string'&&validCorrection(profile.fit,profile.adjustments)
+    &&(profile.appliedToHardware===false||profile.appliedToHardware===true&&Array.isArray(profile.phoneApplication?.transform)&&profile.phoneApplication.transform.length===9&&profile.phoneApplication.transform.every(Number.isFinite));
 }
 export function previewProfileStatus(profile,source) {
   if(!profile)return {usable:false,label:'Not calibrated'};
@@ -47,13 +51,17 @@ export function readLeaderPresets(storage) {
   const presets=value.presets.filter(validLeaderPreset).slice(-12);
   return {activeId:presets.some(p=>p.id===value.activeId)?value.activeId:null,presets};
 }
-export function saveLeaderPreset(storage,profile,source) {
+export function prepareLeaderPreset(profile,source) {
   const status=previewProfileStatus(profile,source);
   if(!status.usable)throw new Error(status.label);
   if(!Number.isFinite(profile.fit.after)||profile.fit.after>12)throw new Error('Chart error is too high to apply automatically. Improve lighting/alignment and recalibrate.');
   if(profile.fit.validation!==undefined&&(!Number.isFinite(profile.fit.validation?.after)||profile.fit.validation.after>12||!Number.isFinite(profile.fit.validation.before)||profile.fit.validation.after>profile.fit.validation.before+0.5))throw new Error('The correction did not validate on withheld patches. Check the chart, alignment and lighting, then capture again before applying to the rig.');
   const preset=structuredClone({...profile,application:{scope:'browser-rig-preview',appliedAt:new Date().toISOString()}});
   if(!validLeaderPreset(preset))throw new Error('Choose a rig leader and capture its chart frame before saving a shared preset.');
+  return preset;
+}
+export function saveLeaderPreset(storage,profile,source) {
+  const preset=prepareLeaderPreset(profile,source);
   const current=readLeaderPresets(storage),state={activeId:preset.id,presets:[...current.presets.filter(p=>p.id!==preset.id),preset].slice(-12)};
   storage.setItem(LEADER_COLOR_STORAGE,JSON.stringify(state));return state;
 }
@@ -70,6 +78,7 @@ export function sharedPreviewStatus(profile,status,now=Date.now()) {
   if(!validLeaderPreset(profile))return {usable:false,label:'Invalid leader preset'};
   if(!status?.connected||!Number.isFinite(status.checkedAt)||now-status.checkedAt>20000||status.checkedAt>now+1000)return {usable:false,label:'Preset saved · waiting for the rig'};
   if((status.backend||'')!==(profile.source.capture.rigBackend||''))return {usable:false,label:'Preset belongs to a different rig'};
+  if(profile.phoneApplication)return {usable:false,label:'Live views show CameraScope output. See Last sync for per-phone results.'};
   const leader=(status.phones||[]).find(p=>colorSourceKey(rigColorSource(p,status))===colorSourceKey(profile.source.capture));
   if(!leader)return {usable:false,label:'Saved leader is no longer in this rig — choose a leader'};
   if(leader.responding&&colorSettingsKey(rigColorSource(leader,status))!==colorSettingsKey(profile.source.capture))return {usable:false,label:'Leader settings changed — recalibrate'};

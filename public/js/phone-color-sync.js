@@ -44,10 +44,12 @@ export function phoneColorPanel(status, phones, leaderId, busy, message, source 
     }).join('')}</ul></details>` : ''}`;
 }
 
-export async function syncPhoneColor(status, ids, leaderId, retry, source = 'measure') {
+export async function syncPhoneColor(status, ids, leaderId, retry, source = 'measure', correction) {
   const body = {ids, leaderId};
   if (retry) body.retryId = status.colorSync.id;
-  const response = await fetch(!retry && source === 'current' ? '/api/rig/color-copy' : '/api/rig/color-sync', {
+  if (source==='adjust'&&!retry) body.correction=correction;
+  const path=retry?'color-sync':({current:'color-copy',adjust:'color-adjust',measure:'color-sync'})[source];
+  const response = await fetch('/api/rig/'+path, {
     method:'POST', headers:{'Content-Type':'application/json', 'X-Rig-Request':'1'},
     body:JSON.stringify(body), signal:AbortSignal.timeout(45000)
   });

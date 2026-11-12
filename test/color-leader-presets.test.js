@@ -9,6 +9,18 @@ const source=()=>rigColorSource(phone(),rig());
 const preset=(id='leader-a')=>({id,name:'Studio run',camera:'Camera a',sample:false,pipeline:'decoded-sRGB-image',appliedToHardware:false,chart:{name:'Test chart'},source:{capture:{...source(),videoWidth:900,videoHeight:620}},fit:{matrix:IDENTITY,after:2},adjustments:defaultAdjustments(),referenceImage:{dataUrl:'data:image/jpeg;base64,TEST'}});
 function memory(){const data=new Map();return {getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};}
 
+test('reload keeps the original chart and the last phone transform without applying a second correction to video',()=>{
+  const storage=memory(),p=preset();
+  p.appliedToHardware=true;
+  p.phoneApplication={transform:[.75,.2,.05,.2,.75,.05,.1,.2,.7],results:[{id:'a',ok:true},{id:'b',ok:true}]};
+  saveLeaderPreset(storage,p,source());
+  const [saved]=readLeaderPresets(storage).presets;
+  assert.deepEqual(saved.phoneApplication,p.phoneApplication);
+  assert.deepEqual(saved.source.capture.reportedSettings,p.source.capture.reportedSettings);
+  assert.equal(sharedPreviewStatus(saved,rig()).usable,false);
+  assert.match(sharedPreviewStatus(saved,rig()).label,/CameraScope output/);
+});
+
 test('one leader preset applies across a rig without fitting or identity-matching followers',()=>{
   const storage=memory(),state=saveLeaderPreset(storage,preset(),source()),p=state.presets[0],status=rig();
   status.phones[1].state={cameraId:'different-lens',iso:600,colorProcessing:{awbMode:'SHADE'}};

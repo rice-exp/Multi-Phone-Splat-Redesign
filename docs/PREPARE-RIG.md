@@ -60,7 +60,7 @@ file produces an explicit error instead of silently resetting the inventory.
 Connection setup edits phone inventory, PC destination and saved ISO/exposure/
 frame-rate/white-balance defaults. Applying settings in Prepare rig changes only
 selected phones, with independent state readback; it does not overwrite saved
-defaults. Edit those defaults in Connection setup when you want them retained.
+defaults. A new rig starts with ISO 1600. Edit saved defaults in Connection setup.
 Existing browser selection preferences take precedence over selected-by-default
 flags; new cameras use the saved flag.
 
@@ -126,9 +126,9 @@ another controller concurrently. There is no distributed lock with the old app.
   They do not set phone clocks or establish sensor phase/capture readiness.
 - Manual settings readback verifies requested CameraScope state, not measured
   sensor exposure/color/timing. Phone-supported limits still need lab verification.
-- Older CameraScope builds may omit `autoExposureEnabled` or white-balance
-  reporting. If ISO, exposure and frame interval match, missing optional fields
-  produce an amber **Settings partly verified** result, not a false mismatch.
+- Older CameraScope builds may omit `autoExposureEnabled`. Matching numeric
+  settings and white balance are displayed quietly when only this flag is missing.
+  Missing white-balance readback is shown as partial verification.
   Missing core numeric values or reported differences still fail verification.
   Each settings result includes a requested/reported comparison; unreported
   fields are never counted as confirmed, and `requestedStateConfirmed` remains
@@ -140,7 +140,7 @@ another controller concurrently. There is no distributed lock with the old app.
 - Geometry calibration, capture, transfer, reconstruction and participant capture
   status remain integration work. Their screens do not simulate successful work.
 
-The review dialog shows the requested values before submission. It does not simulate a photographic change. Prepare rig previews continue showing actual output. The [Color calibration screen](COLOR-CALIBRATION.md) lets the operator choose a leader from live previews, capture one chart frame, and share its correction across every preview in that Calibration screen. Named run presets retain the reference frame and manual adjustments locally. Applying that correction to phone settings, final capture files, or a phone-settings trial and restore still needs pipeline integration and verified CameraScope contracts.
+Edit the desired fields and choose **Apply to selected phones**. Each selected phone keeps its other reported manual values. For a running preview the server reopens the camera with the requested settings and checks for fresh frames. An exposure of 100 ms limits the requested frame rate to 10 FPS. In [Color calibration](COLOR-CALIBRATION.md), use **Apply to leader & followers** to apply a chart fit and slider adjustments to the selected phones. The saved preset keeps the original reference frame for further edits.
 
 The legacy-format mock below confirms matching numeric values while leaving the
 missing auto-exposure flag explicitly unverified; it does not contact a phone.

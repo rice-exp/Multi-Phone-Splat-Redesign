@@ -36,6 +36,46 @@ test('an active preview pipeline is not explicitly reopened; stop never stops ca
   assert.equal(f.states.get('192.168.50.101').isCapturing,true);
 });
 
+test('auto-balance changes only the live leader, independently verifies its modes, and preserves saved defaults',async()=>{
+  const f=fixture(),ip='192.168.50.101',target={ip,route:'cam-1'};
+  f.states.get(ip).isH264Recording=false;
+  const before=structuredClone(f.config),follower=structuredClone(f.states.get('192.168.50.102'));
+  const result=await f.service.operate('auto-balance',['cam-1'],target);
+  assert.equal(result.ok,true);assert.equal(result.results[0].balance.status,'confirmed');
+  const writes=f.commands.filter(c=>c.payload.cmd==='set');
+  assert.deepEqual(writes,[{ip,payload:{cmd:'set',autoExposureEnabled:true,colorProcessing:{awbMode:'AUTO',awbLock:false,colorCorrectionMode:'FAST',tonemapMode:'FAST'}}}]);
+  assert.deepEqual(f.config,before);assert.deepEqual(f.states.get('192.168.50.102'),follower);
+});
+
+test('an acknowledgement never substitutes for balance readback on older phones',async()=>{
+  for(const [reported,expected] of [
+    [{colorProcessing:{awbMode:'AUTO',awbLock:false,colorCorrectionMode:'FAST',tonemapMode:'FAST'}},'partial'],
+    [{autoExposureEnabled:false,colorProcessing:{awbMode:'OFF'}},'mismatch'],
+    [{},'unverified']
+  ]) {
+    const ip='192.168.50.101',f=fixture({command:async(_,p)=>p.cmd==='set'?{ok:true}:{ok:true,state:{isH264Recording:false,isCapturing:true,streamEnabled:true,udpHost:'192.168.50.10',udpVideoPort:5004,udpMetadataPort:6004,...reported}}});
+    const result=await f.service.operate('auto-balance',['cam-1'],{ip,route:'cam-1'});
+    assert.equal(result.results[0].balance.status,expected);assert.equal(result.ok,expected==='partial');
+    if(expected==='partial'){assert.equal(result.results[0].balance.showWarning,false);assert.doesNotMatch(result.results[0].balance.message,/not reported|auto exposure/i);}
+  }
+});
+
+test('auto-balance refuses stale identities, unavailable streams, recording and multiple cameras before any write',async()=>{
+  const ip='192.168.50.101',target={ip,route:'cam-1'},f=fixture();
+  f.states.get(ip).isH264Recording=false;
+  await assert.rejects(()=>f.service.operate('auto-balance',['cam-1','cam-2'],target),{code:'LEADER_NOT_LIVE'});
+  await assert.rejects(()=>f.service.operate('auto-balance',['cam-1'],{...target,ip:'192.168.50.99'}),{code:'LEADER_NOT_LIVE'});
+  f.states.get(ip).streamEnabled=false;
+  await assert.rejects(()=>f.service.operate('auto-balance',['cam-1'],target),{code:'LEADER_NOT_LIVE'});
+  f.states.get(ip).streamEnabled=true;delete f.states.get(ip).isH264Recording;
+  await assert.rejects(()=>f.service.operate('auto-balance',['cam-1'],target),{code:'RECORDING_UNKNOWN'});
+  f.states.get(ip).isH264Recording=true;
+  await assert.rejects(()=>f.service.operate('auto-balance',['cam-1'],target),{code:'PHONE_RECORDING'});
+  f.states.get(ip).isH264Recording=false;f.running();
+  await assert.rejects(()=>f.service.operate('auto-balance',['cam-1'],target),{code:'WORKFLOW_BUSY'});
+  assert.ok(f.commands.every(c=>c.payload.cmd==='getState'));
+});
+
 test('stream acknowledgements without matching destination readback fail per phone',async()=>{
   const f=fixture({command:async()=>({ok:true,state:{isCapturing:true,streamEnabled:true,udpHost:'192.168.1.1'}})});
   const result=await f.service.operate('preview-start',['cam-1']);
@@ -124,7 +164,7 @@ test('running workflows, concurrent operations and invalid selections are blocke
 test('invalid inventory, settings and public phone addresses fail closed',async()=>{
   const f=fixture();f.config.phones[1].ip=f.config.phones[0].ip;assert.equal((await f.service.refresh()).error.code,'CONFIG_INVALID');
   assert.equal(privateAddress('8.8.8.8'),false);assert.equal(privateAddress('example.org'),false);assert.equal(privateAddress('192.168.50.10'),true);
-  assert.throws(()=>validateSettings({...settings,exposureMs:100}));assert.throws(()=>validateSettings({...settings,iso:'200'}));assert.throws(()=>validateSettings({...settings,command:'capture'}));
+  assert.equal(validateSettings({...settings,exposureMs:100}).frameRate,10);assert.throws(()=>validateSettings({...settings,iso:'200'}));assert.throws(()=>validateSettings({...settings,command:'capture'}));
 });
 test('CLI log prefixes are accepted, malformed output is rejected',()=>{
   assert.deepEqual(parseCliJson('Connecting…\n{"ok":true}'),{ok:true});assert.throws(()=>parseCliJson('completed'));

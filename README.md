@@ -72,7 +72,7 @@ Suggested ownership: one person handles setup/calibration, one handles capture/e
 
 ## Code map
 
-In [Color calibration](docs/COLOR-CALIBRATION.md), choose a leader and sync its measured white balance through CameraScope to the phones selected in Prepare rig. Each phone has an independent settings readback. Check the mat from each camera’s angle to measure any remaining red or blue cast. The separate chart preset uses a fresh frame or uploaded photo to correct browser previews.
+In [Color calibration](docs/COLOR-CALIBRATION.md), choose a leader and sync its measured white balance through CameraScope to the phones selected in Prepare rig. Each phone has an independent settings readback. Check the mat from each camera’s angle to measure any remaining red or blue cast. Adjust the chart fit on a captured leader frame and use **Apply to leader & followers** to update the selected phones. Uploaded photos support a browser comparison. If the original leader preview is dark or tinted, use **Auto-balance leader preview** before measuring white balance.
 
 | File | Purpose |
 | --- | --- |

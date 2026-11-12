@@ -45,6 +45,8 @@ test('server serves real workflows and refuses invented participant capture cues
   const controller=new AbortController();t.after(()=>controller.abort());
   const copy=await fetch(origin+'/api/rig/color-copy',{method:'POST',headers:{'Content-Type':'application/json','X-Rig-Request':'1'},body:JSON.stringify({ids:[],leaderId:'unknown'})});
   assert.equal(copy.status,400);assert.equal((await copy.json()).code,'INVALID_SELECTION');
+  const adjust=await fetch(origin+'/api/rig/color-adjust',{method:'POST',headers:{'Content-Type':'application/json','X-Rig-Request':'1'},body:JSON.stringify({ids:[],leaderId:'unknown'})});
+  assert.equal(adjust.status,400);assert.equal((await adjust.json()).code,'INVALID_SELECTION');
   const stream=await fetch(`${origin}/api/participant/events`,{signal:controller.signal});
   const reader=stream.body.getReader();const event=new TextDecoder().decode((await reader.read()).value);assert.match(event,/"available":false/);assert.match(event,/"phase":null/);
   const post=await fetch(`${origin}/api/participant/state`,{method:'POST',headers:{Origin:origin},body:JSON.stringify({phase:'capturing',remaining:3,sessionName:'Test take'})});

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {RigService} from '../lib/rig-service.mjs';
 import {TEST_CONFIG} from '../test-support/rig-config.mjs';
+import {IDENTITY,correctLinear,defaultAdjustments} from '../public/js/color-calibration.js';
+import {referenceSettings} from '../public/js/color-profiles.js';
 
 const snapshot = {
   awbMode:'OFF', awbLock:false, colorCorrectionMode:'TRANSFORM_MATRIX', whiteBalanceGains:[1.76,1,1,1.44],
@@ -29,6 +31,7 @@ function rig() {
       }
       if (body.cmd === 'setColorProcessing') {
         state.colorProcessing = structuredClone(body.value);
+        if (faults.round) state.colorProcessing.colorCorrectionTransform=state.colorProcessing.colorCorrectionTransform.map(n=>Math.round(n*1000)/1000);
         if (ip === faults.mismatch) state.colorProcessing.tonemapMode = 'HIGH_QUALITY';
         if (ip === faults.lostAck) throw new Error('Lost acknowledgement');
       }
@@ -45,6 +48,66 @@ test('concurrent Prepare rig and Calibration refreshes both receive the same pho
   assert.ok(prepare.connected);
   assert.deepEqual(calibration,prepare);
   assert.equal(f.commands.length,phones.length);
+});
+
+function chartFrame(f) {
+  const state=f.states.get(leader.ip);
+  state.colorProcessing=structuredClone(snapshot);
+  return {ip:leader.ip,route:'cam-1',reference:structuredClone(referenceSettings(state)),fit:{matrix:IDENTITY,after:2},adjustments:{...defaultAdjustments(),saturation:40}};
+}
+const adjust=(f,correction,ids=[leader.id,follower.id])=>f.service.operate('color-sync',ids,{leaderId:leader.id,source:'adjust',correction});
+
+test('Apply writes the fitted correction and sliders to the leader, then copies its rounded readback only to selected followers',async()=>{
+  const f=rig(),frame=chartFrame(f);
+  frame.fit.matrix=[[1,.06,0],[0,.95,.02],[-.02,0,1.03]];
+  frame.adjustments={amount:72,exposure:.3,warmth:12,tint:-9,saturation:65};
+  f.faults.lostAck=leader.ip;f.faults.round=true;
+  const result=await adjust(f,frame);
+  assert.equal(result.ok,true);
+  const writes=f.writes();
+  assert.deepEqual(writes.map(c=>[c.ip,c.body.cmd]),[[leader.ip,'setColorProcessing'],[follower.ip,'setColorProcessing']]);
+  const matrix=writes[0].body.value.colorCorrectionTransform,base=snapshot.colorCorrectionTransform;
+  const multiply=(m,v)=>[0,1,2].map(row=>v.reduce((sum,n,col)=>sum+n*m[row*3+col],0));
+  const input=[.19,.37,.54];
+  const expected=correctLinear(multiply(base,input),frame.fit.matrix,frame.adjustments);
+  multiply(matrix,input).forEach((n,i)=>assert.ok(Math.abs(n-expected[i])<1e-9));
+  const verified=f.states.get(leader.ip).colorProcessing;
+  assert.deepEqual(writes[1].body.value,verified);
+  assert.deepEqual(f.states.get(follower.ip).colorProcessing,verified);
+  assert.deepEqual(verified.whiteBalanceGains,snapshot.whiteBalanceGains);
+  assert.equal(f.states.get(side.ip).colorProcessing.awbMode,'AUTO');
+  await adjust(f,frame);
+  assert.equal(f.writes().length,2);
+  // A second slider position and a reset start from the original reference.
+  const reset={...frame,fit:{matrix:IDENTITY,after:2},previousTransform:verified.colorCorrectionTransform,adjustments:defaultAdjustments()};
+  assert.equal((await adjust(f,reset)).ok,true);
+  assert.deepEqual(f.states.get(follower.ip).colorProcessing,snapshot);
+});
+
+test('unusable or stale chart frames cannot write phones, and a leader mismatch prevents follower writes',async()=>{
+  const f=rig(),frame=chartFrame(f);
+  for(const wrong of [{route:'cam-9'},{ip:side.ip},{fit:{matrix:IDENTITY,after:16}},{adjustments:{...frame.adjustments,saturation:300}},{fit:{...frame.fit,offset:[.1,0,0]}}]){
+    await assert.rejects(adjust(f,{...frame,...wrong}));
+  }
+  f.states.get(leader.ip).iso=300;
+  await assert.rejects(adjust(f,frame),{code:'COLOR_REFERENCE_CHANGED'});
+  f.states.get(leader.ip).iso=200;
+  f.states.get(leader.ip).colorProcessing.colorCorrectionTransform=Array(9).fill(0);
+  await assert.rejects(adjust(f,frame),{code:'COLOR_REFERENCE_CHANGED'});
+  assert.equal(f.writes().length,0);
+  f.states.get(leader.ip).colorProcessing=structuredClone(snapshot);f.faults.mismatch=leader.ip;
+  await assert.rejects(adjust(f,frame),{code:'COLOR_LEADER_FAILED'});
+  assert.deepEqual(f.writes().map(w=>w.ip),[leader.ip]);
+});
+
+test('partial adjustment can retry an offline follower without rewriting the leader',async()=>{
+  const f=rig(),frame=chartFrame(f);
+  f.faults.offline=follower.ip;
+  const first=await adjust(f,frame);
+  assert.deepEqual(first.results.map(r=>r.ok),[true,false]);
+  delete f.faults.offline;
+  assert.equal((await f.sync([leader.id,follower.id],first.status.colorSync.id)).ok,true);
+  assert.deepEqual(f.writes().map(w=>w.ip),[leader.ip,follower.ip]);
 });
 
 test('one measured hardware snapshot reaches only selected phones, including a follower without a preview', async()=>{
@@ -156,6 +219,9 @@ test('the calibration button addresses the displayed selection even if another t
   });
   assert.equal(await syncPhoneColor(status,displayed,leader.id,true),status);
   await syncPhoneColor(status,displayed,leader.id,false,'current');
+  const correction={adjustments:{...defaultAdjustments(),saturation:75}};
+  await syncPhoneColor(status,displayed,leader.id,false,'adjust',correction);
   assert.deepEqual(calls,[['/api/rig/color-sync','1',{ids:[leader.id,follower.id],leaderId:leader.id,retryId:'previous-snapshot'}],
-    ['/api/rig/color-copy','1',{ids:[leader.id,follower.id],leaderId:leader.id}]]);
+    ['/api/rig/color-copy','1',{ids:[leader.id,follower.id],leaderId:leader.id}],
+    ['/api/rig/color-adjust','1',{ids:[leader.id,follower.id],leaderId:leader.id,correction}]]);
 });

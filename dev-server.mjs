@@ -57,11 +57,12 @@ const server=http.createServer(async(req,res)=>{
       if(url.pathname==='/api/rig/refresh')return json(res,200,await rig.refresh(true));
       if(url.pathname==='/api/rig/config')return json(res,200,await rig.configure(value));
       if(['/api/rig/gateway-start','/api/rig/gateway-stop'].includes(url.pathname))return json(res,200,await rig.controlGateway(url.pathname.endsWith('start')?'start':'stop'));
-      if(!['/api/rig/settings','/api/rig/color-copy','/api/rig/color-sync','/api/rig/sync','/api/rig/preview-start','/api/rig/preview-stop'].includes(url.pathname))return json(res,404,{error:'Not found'});
-      const copyColor=url.pathname==='/api/rig/color-copy';
-      const action=copyColor?'color-sync':url.pathname.split('/').at(-1);
-      const options=action==='color-sync'?{leaderId:value.leaderId,retryId:value.retryId,source:copyColor?'current':'measure'}:value.settings;
-      try{return json(res,200,await rig.operate(action,value.ids,options));}
+      const colorSources = {'color-sync':'measure', 'color-copy':'current', 'color-adjust':'adjust'};
+      const route=url.pathname.split('/').at(-1);
+      const colorSource=Object.hasOwn(colorSources,route)?colorSources[route]:null;
+      if(url.pathname!=='/api/rig/'+route||(!colorSource&&!['settings','sync','preview-start','preview-stop','auto-balance'].includes(route)))return json(res,404,{error:'Not found'});
+      const options=colorSource?{leaderId:value.leaderId,retryId:value.retryId,source:colorSource,correction:value.correction}:value.settings;
+      try{return json(res,200,await rig.operate(colorSource?'color-sync':route,value.ids,options,{refreshPreview:value.refreshPreview===true}));}
       catch(error){return json(res,error.status||503,{error:error.message,code:error.code||'RIG_ERROR',next:error.next});}
     }
     if(url.pathname==='/api/participant/events'&&req.method==='GET') {
