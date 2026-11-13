@@ -50,6 +50,18 @@ test('affine offsets and validation survive saving, and bad validation cannot re
   assert.equal(sharedPreviewStatus(readLeaderPresets(storage).presets[0],rig()).usable,true);
 });
 
+test('an approximate fit is activated only after review and stays editable after reload',()=>{
+  const storage=memory(),profile=preset();
+  profile.fit={matrix:IDENTITY,before:44.6,after:24.4,accepted:17,validation:{before:44.6,after:29}};
+  assert.throws(()=>saveLeaderPreset(storage,profile,source()),/Review/);
+  assert.equal(readLeaderPresets(storage).activeId,null);
+  saveLeaderPreset(storage,{...profile,reviewedFit:true},source());
+  const restored=readLeaderPresets(storage).presets[0];
+  assert.deepEqual(restored.fit,profile.fit);
+  assert.equal(sharedPreviewStatus(restored,rig()).usable,true);
+  assert.throws(()=>saveLeaderPreset(storage,{...restored,fit:{...profile.fit,validation:{before:44.6,after:null}}},source()),/withheld/);
+});
+
 test('sample/device/unknown camera, poor fits and failed persistence cannot replace the active preset',()=>{
   const storage=memory(),first=preset();saveLeaderPreset(storage,first,source());
   const device={kind:'device-video',settings:{deviceId:'usb-camera'}};

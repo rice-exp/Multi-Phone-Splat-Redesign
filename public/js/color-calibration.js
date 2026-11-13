@@ -162,8 +162,56 @@ function regressColor(samples) {
     for(let row=terms-1;row>=0;row--)result[row]=(rows[row][terms+channel]-result.reduce((sum,v,k)=>sum+(k>row?rows[row][k]*v:0),0))/rows[row][row];
     return result;
   });
-  if(coefficients.flat().some(n=>!Number.isFinite(n)||Math.abs(n)>8))throw new Error('Correction is too extreme. Check the chart model, corner order and exposure.');
-  return {matrix:coefficients};
+  if(coefficients.flat().some(n=>!Number.isFinite(n)))throw new Error('The chart did not produce a finite correction.');
+  return {matrix:coefficients.map((row,channel)=>refineChannel(samples,channel,row))};
+}
+
+// Refine the same linear CCM against the displayed sRGB error. A linear-RGB
+// least-squares fit otherwise gives the brightest patches much more weight.
+function refineChannel(samples,channel,initial) {
+  let row=initial.map(n=>clamp(n,-8,8));
+  const target=samples.map(s=>encodeSRGB(s.target[channel]));
+  const predicted=(r,s)=>r.reduce((sum,v,k)=>sum+v*s.measured[k],0);
+  const loss=r=>samples.reduce((sum,s,i)=>sum+(encodeSRGB(clamp(predicted(r,s)))-target[i])**2,0);
+  let error=loss(row);
+  for(let iteration=0;iteration<12&&error>1e-12;iteration++){
+    const normal=[[0,0,0],[0,0,0],[0,0,0]],rhs=[0,0,0];
+    samples.forEach((s,i)=>{
+      const value=predicted(row,s);
+      const slope=value<=.0031308?12.92:(1.055/2.4)*value**(1/2.4-1);
+      const derivative=s.measured.map(v=>v*slope);
+      const residual=target[i]-encodeSRGB(value);
+      for(let k=0;k<3;k++){
+        rhs[k]+=derivative[k]*residual;
+        for(let j=0;j<3;j++)normal[k][j]+=derivative[k]*derivative[j];
+      }
+    });
+    // QR has already checked independence. Retain its solution when the
+    // weighted refinement is ill-conditioned or can't lower displayed error.
+    let step;
+    try {step=solveLinear(normal,rhs);} catch {break;}
+    let better=false;
+    for(let scale=1;scale>=1/32;scale/=2){
+      const next=row.map((v,k)=>clamp(v+step[k]*scale,-8,8));
+      const nextError=loss(next);
+      if(nextError<error-1e-12){row=next;error=nextError;better=true;break;}
+    }
+    if(!better)break;
+  }
+  return row;
+}
+
+// The absolute target is for automatic activation. An improvement on both
+// the training patches and the leave-one-out check can be reviewed explicitly.
+export function fitDisposition(fit) {
+  const valid=n=>Number.isFinite(n)&&n>=0;
+  if(!valid(fit?.after))return 'blocked';
+  const v=fit.validation;
+  if(v===undefined)return fit.after<=12?'automatic':'blocked'; // legacy presets
+  if(!valid(v?.before)||!valid(v?.after)||v.after>v.before+0.5)return 'blocked';
+  if(fit.after<=12&&v.after<=12)return 'automatic';
+  return Number.isInteger(fit.accepted)&&fit.accepted>=MIN_USABLE_PATCHES&&valid(fit.before)&&v.before===fit.before&&
+    fit.after<fit.before&&v.after<v.before?'review':'blocked';
 }
 
 const transformed=(fit,rgb)=>multiply(fit.matrix,rgb).map((n,k)=>n+(fit.offset?.[k]??0));

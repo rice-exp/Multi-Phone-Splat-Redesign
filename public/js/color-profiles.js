@@ -1,4 +1,5 @@
 // Browser preview profiles are separate from phone/sensor settings.
+import {fitDisposition} from './color-calibration.js';
 export const LEADER_COLOR_STORAGE='splat-color-leader-presets-v1';
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
 const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>value?.[k]!==undefined).map(k=>[k,value[k]]));
@@ -38,10 +39,10 @@ export function previewProfileStatus(profile,source) {
   return {usable:true,label:'Profile applied to preview'};
 }
 export function validLeaderPreset(profile) {
+  const disposition=fitDisposition(profile?.fit);
   return validColorProfile(profile)&&profile.sample===false&&profile.source?.capture?.kind==='rig-video'&&!!colorSourceKey(profile.source.capture)
     &&typeof profile.name==='string'&&typeof profile.camera==='string'&&typeof profile.chart?.name==='string'
-    &&Number.isFinite(profile.fit.after)&&profile.fit.after<=12
-    &&(profile.fit.validation===undefined||Number.isFinite(profile.fit.validation?.after)&&profile.fit.validation.after<=12&&Number.isFinite(profile.fit.validation.before)&&profile.fit.validation.after<=profile.fit.validation.before+0.5)
+    &&(disposition==='automatic'||disposition==='review'&&profile.reviewedFit===true)
     &&typeof profile.referenceImage?.dataUrl==='string'&&profile.referenceImage.dataUrl.startsWith('data:image/jpeg;base64,')&&profile.referenceImage.dataUrl.length<1000000
     &&profile.application?.scope==='browser-rig-preview';
 }
@@ -54,8 +55,9 @@ export function readLeaderPresets(storage) {
 export function prepareLeaderPreset(profile,source) {
   const status=previewProfileStatus(profile,source);
   if(!status.usable)throw new Error(status.label);
-  if(!Number.isFinite(profile.fit.after)||profile.fit.after>12)throw new Error('Chart error is too high to apply automatically. Improve lighting/alignment and recalibrate.');
-  if(profile.fit.validation!==undefined&&(!Number.isFinite(profile.fit.validation?.after)||profile.fit.validation.after>12||!Number.isFinite(profile.fit.validation.before)||profile.fit.validation.after>profile.fit.validation.before+0.5))throw new Error('The correction did not validate on withheld patches. Check the chart, alignment and lighting, then capture again before applying to the rig.');
+  const disposition=fitDisposition(profile.fit);
+  if(disposition==='blocked')throw new Error('The correction could not be verified on withheld patches. Check the sampled chart squares before applying.');
+  if(disposition==='review'&&profile.reviewedFit!==true)throw new Error('Review the before/after frame before applying this approximate correction.');
   const preset=structuredClone({...profile,application:{scope:'browser-rig-preview',appliedAt:new Date().toISOString()}});
   if(!validLeaderPreset(preset))throw new Error('Choose a rig leader and capture its chart frame before saving a shared preset.');
   return preset;

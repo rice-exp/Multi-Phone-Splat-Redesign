@@ -57,6 +57,18 @@ function chartFrame(f) {
 }
 const adjust=(f,correction,ids=[leader.id,follower.id])=>f.service.operate('color-sync',ids,{leaderId:leader.id,source:'adjust',correction});
 
+test('only a reviewed, improving approximate fit is sent to leader and followers',async()=>{
+  const f=rig(),frame=chartFrame(f);
+  frame.fit={matrix:IDENTITY,before:44.6,after:24.4,accepted:17,validation:{before:44.6,after:29}};
+  await assert.rejects(adjust(f,frame),{code:'COLOR_FIT_INVALID'});
+  frame.reviewedFit=true;
+  await assert.rejects(adjust(f,{...frame,fit:{...frame.fit,validation:{before:44.6,after:48}}}),{code:'COLOR_FIT_INVALID'});
+  assert.equal(f.writes().length,0);
+  assert.equal((await adjust(f,frame)).ok,true);
+  assert.deepEqual(f.writes().map(w=>w.ip),[leader.ip,follower.ip]);
+  assert.deepEqual(f.states.get(follower.ip).colorProcessing,f.states.get(leader.ip).colorProcessing);
+});
+
 test('Apply writes the fitted correction and sliders to the leader, then copies its rounded readback only to selected followers',async()=>{
   const f=rig(),frame=chartFrame(f);
   frame.fit.matrix=[[1,.06,0],[0,.95,.02],[-.02,0,1.03]];
