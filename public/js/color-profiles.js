@@ -1,5 +1,5 @@
 // Browser preview profiles are separate from phone/sensor settings.
-import {IDENTITY,fitDisposition,relativeColorPreview} from './color-calibration.js';
+import {IDENTITY,fitDisposition} from './color-calibration.js';
 export const LEADER_COLOR_STORAGE='splat-color-leader-presets-v1';
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
 const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>value?.[k]!==undefined).map(k=>[k,value[k]]));
@@ -42,9 +42,10 @@ export function previewProfileStatus(profile,source) {
 export function validLeaderPreset(profile) {
   const disposition=fitDisposition(profile?.fit);
   return validColorProfile(profile)&&profile.sample===false&&profile.source?.capture?.kind==='rig-video'&&!!colorSourceKey(profile.source.capture)
-    &&typeof profile.name==='string'&&typeof profile.camera==='string'&&typeof profile.chart?.name==='string'
+    &&typeof profile.name==='string'&&typeof profile.camera==='string'&&(disposition==='manual'||typeof profile.chart?.name==='string')
     &&(disposition==='automatic'||disposition==='manual'||disposition==='review'&&profile.reviewedFit===true)
-    &&typeof profile.referenceImage?.dataUrl==='string'&&profile.referenceImage.dataUrl.startsWith('data:image/jpeg;base64,')&&profile.referenceImage.dataUrl.length<1000000
+    &&((disposition==='manual'&&profile.referenceImage==null)||
+      (typeof profile.referenceImage?.dataUrl==='string'&&profile.referenceImage.dataUrl.startsWith('data:image/jpeg;base64,')&&profile.referenceImage.dataUrl.length<1000000))
     &&profile.application?.scope==='browser-rig-preview';
 }
 export function readLeaderPresets(storage) {
@@ -60,12 +61,15 @@ export function prepareLeaderPreset(profile,source) {
   if(disposition==='blocked')throw new Error('The correction could not be verified on withheld patches. Check the sampled chart squares before applying.');
   if(disposition==='review'&&profile.reviewedFit!==true)throw new Error('Review the before/after frame before applying this approximate correction.');
   const preset=structuredClone({...profile,application:{scope:'browser-rig-preview',appliedAt:new Date().toISOString()}});
-  if(!validLeaderPreset(preset))throw new Error('Choose a rig leader and capture its chart frame before saving a shared preset.');
+  if(!validLeaderPreset(preset))throw new Error('Could not save this leader preset. Check the source and correction settings.');
   return preset;
 }
-export function saveLeaderPreset(storage,profile,source) {
+export function saveLeaderPreset(storage,profile,source,{activate=true}={}) {
   const preset=prepareLeaderPreset(profile,source);
-  const current=readLeaderPresets(storage),state={activeId:preset.id,presets:[...current.presets.filter(p=>p.id!==preset.id),preset].slice(-12)};
+  const current=readLeaderPresets(storage),activeId=activate?preset.id:current.activeId;
+  const presets=[...current.presets.filter(p=>p.id!==preset.id),preset];
+  if(presets.length>12)presets.splice(presets.findIndex(p=>p.id!==activeId),1);
+  const state={activeId,presets};
   storage.setItem(LEADER_COLOR_STORAGE,JSON.stringify(state));return state;
 }
 export function selectLeaderPreset(storage,id) {
@@ -95,11 +99,10 @@ function matchesTransform(actual,expected) {
     expected.every((value,i)=>Math.abs(value-actual[i])<=0.001);
 }
 
-// Results describe phone settings. Only a pending edit or a browser-only
-// preset is painted onto video. Confirmed phone output stays unfiltered.
-export function cameraColorView(phone,{status,profile,shared,draft,selectedIds}) {
-  const source=draft?.source||profile?.source.capture;
-  const application=draft?draft.previous:profile?.phoneApplication;
+// Only applied settings reach the preview. CameraScope output already includes phone corrections.
+export function cameraColorView(phone,{status,profile,shared,selectedIds}) {
+  const source=profile?.source.capture;
+  const application=profile?.phoneApplication;
   const selected=selectedIds.includes(phone.id);
   if(!selected)return {label:'Outside the current selection · CameraScope video'};
   if(!status?.connected || !Number.isFinite(status.checkedAt) || Math.abs(Date.now()-status.checkedAt)>20000)return {label:'Waiting for current camera status'};
@@ -114,15 +117,6 @@ export function cameraColorView(phone,{status,profile,shared,draft,selectedIds})
     const sensor=phone.state?.effectiveColor?.transform;
     const hasSensor=Array.isArray(sensor)&&sensor.length===9&&sensor.every(Number.isFinite);
     const matched=matchesTransform(current,application?.transform);
-    if(draft){
-      if(application&&matched){
-        if(hasSensor&&!matchesTransform(sensor,application.transform))return {label:'See Before / after · waiting for the sensor transform'};
-        const relative=application.matrix&&application.adjustments&&relativeColorPreview(draft,{fit:{matrix:application.matrix},adjustments:application.adjustments});
-        return relative?{render:relative,label:'Unsaved slider preview'}:{label:'See Before / after for this edit · current stream cannot recover the original colors'};
-      }
-      if(application&&reported?.ok)return {label:'Camera settings changed · check the reference frame'};
-      return {render:draft,label:'Unsaved slider preview'};
-    }
     if(application){
       if(!reported)return {label:'Outside the last Apply · CameraScope video'};
       if(!reported.ok)return {label:'Apply unconfirmed · see Last sync'};

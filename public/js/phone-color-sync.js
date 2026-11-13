@@ -22,7 +22,7 @@ export function phoneColorPanel(status, phones, leaderId, busy, message, source 
   const followers = phones.filter(p => p.id !== leaderId);
   const manual = leader?.state?.colorProcessing?.awbMode === 'OFF' && leader.state.colorProcessing.colorCorrectionMode === 'TRANSFORM_MATRIX';
   return `<h3>Leader and follower color settings</h3>
-    <p class="cal-caption">Place the mat at the subject position under capture lighting. Choose a leader with an evenly lit view and no glare.</p>
+    <p class="cal-caption">Choose the phone whose color settings you want to share. For chart calibration, place the mat under the capture lighting.</p>
     <label>Leader phone<select id="color-sync-leader" ${disabled || !options ? 'disabled' : ''}><option value="">Choose a phone</option>${options}</select></label>
     <label>Settings to apply<select id="color-sync-source" ${busy ? 'disabled' : ''}>
       <option value="measure" ${current ? '' : 'selected'}>Measure new white balance</option>
@@ -55,6 +55,6 @@ export async function syncPhoneColor(status, ids, leaderId, retry, source = 'mea
   });
   if (response.status === 404) throw new Error('Restart npm start from the updated calibration branch, then reload this page.');
   const data = await response.json();
-  if (!response.ok) throw new Error([data.error, data.next].filter(Boolean).join(' '));
+  if (!response.ok) throw Object.assign(new Error([data.error, data.next].filter(Boolean).join(' ')),{code:data.code});
   return data.status;
 }

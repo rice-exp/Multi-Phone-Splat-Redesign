@@ -28,10 +28,10 @@ try { selected = JSON.parse(localStorage.getItem('rig-selection-v1') || '{}') ||
 function render() {
   const job = status?.job;
   const locked = submitting || !status || Boolean(status.busy);
-  $('take-cameras').disabled = locked;
+  $('take-cameras').disabled = submitting || !!status?.busy || previousList === undefined;
   $('take-name').disabled = locked;
   $('take-count').disabled = locked;
-  $('take-start').disabled = locked || !!status?.setup || !Object.values(selected).some(Boolean);
+  $('take-start').disabled = locked || previousList === undefined || !!status?.setup || !Object.values(selected).some(Boolean);
   $('take-setup').textContent = status?.setup || (status?.busy && !job ? 'Wait for the current rig operation to finish.' : '');
   $('take-job').hidden = !job;
   if (!job) return;
@@ -45,24 +45,44 @@ function render() {
   $('take-retry').hidden = !job.retryable;
   $('take-retry').disabled = locked;
 }
+async function readCaptureApi(path) {
+  const response=await fetch('/api/rig/'+path,{cache:'no-store',signal:AbortSignal.timeout(6000)});
+  if(path==='capture' && [404,405].includes(response.status))
+    throw Error('Restart the web server with Ctrl+C and npm start to enable recording on this version.');
+  const value=await response.json();
+  if(!response.ok)throw Error(value.error || 'Request failed ('+response.status+').');
+  return value;
+}
+function showCameras(phones) {
+  if(!Array.isArray(phones))throw Error('The rig did not return a camera list.');
+  const list = JSON.stringify(phones);
+  if (previousList !== list) {
+    selected = selectionFor(phones, selected);
+    $('take-list').innerHTML = phones.map(p => `<label><input type="checkbox" value="${esc(p.id)}" ${selected[p.id]?'checked':''}> ${esc(p.name)} <small>${esc(p.ip)}</small></label>`).join('') ||
+      '<a href="/">Add cameras in Prepare rig</a>';
+    previousList = list;
+  }
+}
 async function refresh() {
   if (loading || submitting) return;
   loading = true;
   try {
-    const response = await fetch('/api/rig/capture',{cache:'no-store'});
-    const next = await response.json();
-    if (!response.ok) throw Error(next.error);
+    const [inventory,capture] = await Promise.allSettled([
+      readCaptureApi('config').then(({config})=>showCameras(config?.phones)), readCaptureApi('capture')
+    ]);
     if (submitting) return;
+    if(inventory.status==='rejected'){
+      if(capture.status==='fulfilled')showCameras(capture.value.phones);
+      else {
+        previousList=undefined;
+        $('take-list').textContent='Camera list unavailable. '+inventory.reason.message;
+      }
+    }
+    if(capture.status==='rejected')throw capture.reason;
+    const next=capture.value;
     if (!$('take-count').dataset.initialized) {
       $('take-count').value = next.frameCount;
       $('take-count').dataset.initialized = 'true';
-    }
-    const list = JSON.stringify(next.phones);
-    if (previousList !== list) {
-      selected = selectionFor(next.phones, selected);
-      $('take-list').innerHTML = next.phones.map(p => `<label><input type="checkbox" value="${esc(p.id)}" ${selected[p.id]?'checked':''}> ${esc(p.name)} <small>${esc(p.ip)}</small></label>`).join('') ||
-        '<a href="/">Add cameras in Prepare rig</a>';
-      previousList = list;
     }
     $('take-folder').textContent = next.framesRoot;
     if (!status) $('take-error').textContent = '';
