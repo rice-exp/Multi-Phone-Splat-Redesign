@@ -57,6 +57,20 @@ function chartFrame(f) {
 }
 const adjust=(f,correction,ids=[leader.id,follower.id])=>f.service.operate('color-sync',ids,{leaderId:leader.id,source:'adjust',correction});
 
+test('manual-only saturation reaches selected phones and can be restored from the same reference',async()=>{
+  const f=rig(),frame=chartFrame(f);
+  frame.fit={model:'manual',matrix:IDENTITY};
+  frame.adjustments={...defaultAdjustments(),saturation:0};
+  const first=await adjust(f,frame),gray=first.status.colorSync.snapshot.colorCorrectionTransform;
+  assert.deepEqual(gray.slice(0,3),gray.slice(3,6));assert.deepEqual(gray.slice(3,6),gray.slice(6));
+  assert.deepEqual(f.states.get(follower.ip).colorProcessing.colorCorrectionTransform,gray);
+  assert.equal(f.states.get(side.ip).colorProcessing.awbMode,'AUTO');
+  const restored=await adjust(f,{...frame,adjustments:defaultAdjustments(),previousTransform:gray});
+  assert.deepEqual(restored.status.colorSync.snapshot.colorCorrectionTransform,snapshot.colorCorrectionTransform);
+  assert.deepEqual(f.states.get(follower.ip).colorProcessing.colorCorrectionTransform,snapshot.colorCorrectionTransform);
+  await assert.rejects(adjust(f,{...frame,fit:{model:'manual',matrix:[[4,0,0],[0,4,0],[0,0,4]]}}),{code:'COLOR_FIT_INVALID'});
+});
+
 test('only a reviewed, improving approximate fit is sent to leader and followers',async()=>{
   const f=rig(),frame=chartFrame(f);
   frame.fit={matrix:IDENTITY,before:44.6,after:24.4,accepted:17,validation:{before:44.6,after:29}};

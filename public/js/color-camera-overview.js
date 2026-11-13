@@ -2,7 +2,7 @@ import {esc,icon} from './icons.js';
 import {LivePreview,previewEndpoint} from './live-preview.js';
 import {availableColorCameras,nextVideoFrame,originalVideoPixels} from './color-camera.js';
 import {ColorLivePreview} from './color-live-preview.js';
-import {colorSettingsKey,colorSourceKey,sharedPreviewStatus,rigColorSource} from './color-profiles.js';
+import {colorSettingsKey,cameraColorView,rigColorSource} from './color-profiles.js';
 
 // Four streams at a time keeps the overview usable on a laptop or phone.
 export class ColorCameraOverview {
@@ -13,12 +13,13 @@ export class ColorCameraOverview {
       const button=event.target.closest('button');if(!button||button.disabled)return;
       if(button.dataset.cameraSelect)this.select(button.dataset.cameraSelect);
       if(button.dataset.chartCheck)checkChart(button.dataset.chartCheck);
-      if(button.dataset.cameraPage){this.page+=Number(button.dataset.cameraPage);this.update(this.status,this.profile,this.selected,this.busy);}
+      if(button.dataset.cameraPage){this.page+=Number(button.dataset.cameraPage);this.update(this.context,this.selected,this.busy);}
     });
   }
   mount(host){if(host)host.replaceChildren(this.element);}
-  update(status,profile=null,selected='',busy=false) {
-    this.status=status;this.profile=profile;this.selected=selected;this.busy=busy;
+  update(context,selected='',busy=false) {
+    const {status}=context;
+    this.context=context;this.selected=selected;this.busy=busy;
     const all=status?.phones||[],available=availableColorCameras(status);
     this.page=Math.min(this.page,Math.max(0,Math.ceil(all.length/4)-1));
     const visible=all.slice(this.page*4,this.page*4+4),ids=new Set(visible.map(p=>p.id));
@@ -41,7 +42,7 @@ export class ColorCameraOverview {
           const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;video.setAttribute('aria-label',`Color overview: ${phone.name}`);
           entry.video=video;entry.color=new ColorLivePreview(video,{onError:()=>{entry.failed=true;entry.card.querySelector('.color-tile-profile').textContent='Correction unavailable · original preview';}});
           host.replaceChildren(video,entry.color.canvas);entry.failed=false;
-          entry.player=new LivePreview(video,path,(message,tone)=>{stream.textContent=message;entry.live=tone==='success';if(!entry.live)entry.color?.setProfile(null);entry.card.querySelector('[data-chart-check]').disabled=this.busy||!entry.live;});
+          entry.player=new LivePreview(video,path,(message,tone)=>{stream.textContent=message;entry.live=tone==='success';entry.color?.setProfile(entry.live&&!entry.failed?entry.view?.render:null);entry.card.querySelector('[data-chart-check]').disabled=this.busy||!entry.live;});
         }else{host.innerHTML=`<div class="color-live-empty">${icon('camera',24)}<span>Preview unavailable</span></div>`;stream.textContent=phone.responding?'Start preview in Prepare rig':'Camera offline';}
       }
       entry.card.classList.toggle('selected',selected===phone.id);
@@ -51,11 +52,10 @@ export class ColorCameraOverview {
       const reading=this.checks.get(phone.id);
       if(reading && (reading.ip!==phone.ip || !online || reading.settings!==colorSettingsKey(rigColorSource(phone,status))))this.checks.delete(phone.id);
       entry.card.querySelector('.chart-reading').textContent=this.checks.get(phone.id)?.label||'';
-      const isLeader=profile&&colorSourceKey(rigColorSource(phone,status))===colorSourceKey(profile.source.capture);
-      const check=sharedPreviewStatus(profile,status);
-      entry.color?.setProfile(online&&entry.live&&check.usable&&!entry.failed?profile:null);
+      entry.view=cameraColorView(phone,context);
+      entry.color?.setProfile(online&&entry.live&&!entry.failed?entry.view.render:null);
       entry.card.querySelector('strong').textContent=phone.name;
-      entry.card.querySelector('.color-tile-profile').textContent=entry.failed?'Correction unavailable · original preview':!online&&profile?'Shared preset saved · camera offline':profile?check.usable?(entry.live?`${isLeader?'Preset leader':'Follower'} · shared correction`:'Shared preset · waiting for video'):check.label:'Original preview · no shared preset';
+      entry.card.querySelector('.color-tile-profile').textContent=entry.failed?'Correction unavailable · original preview':entry.view.label;
     }
   }
   async captureView(phone) {

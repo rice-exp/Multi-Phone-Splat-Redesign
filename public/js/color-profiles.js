@@ -1,5 +1,5 @@
 // Browser preview profiles are separate from phone/sensor settings.
-import {fitDisposition} from './color-calibration.js';
+import {IDENTITY,fitDisposition,relativeColorPreview} from './color-calibration.js';
 export const LEADER_COLOR_STORAGE='splat-color-leader-presets-v1';
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
 const pick=(value,keys)=>Object.fromEntries(keys.filter(k=>value?.[k]!==undefined).map(k=>[k,value[k]]));
@@ -22,7 +22,8 @@ export function colorSettingsKey(source) {
 export function validCorrection(fit,adjustments) {
   return Array.isArray(fit?.matrix)&&fit.matrix.length===3&&fit.matrix.every(row=>Array.isArray(row)&&row.length===3&&row.every(v=>Number.isFinite(v)&&Math.abs(v)<=8))
     &&(fit.offset===undefined||Array.isArray(fit.offset)&&fit.offset.length===3&&fit.offset.every(v=>Number.isFinite(v)&&Math.abs(v)<=0.5))
-    &&(fit.model===undefined||['linear','affine'].includes(fit.model))
+    &&(fit.model===undefined||['linear','affine','manual'].includes(fit.model))
+    &&(fit.model!=='manual'||(fit.matrix.every((row,i)=>row.every((n,j)=>n===IDENTITY[i][j]))&&!fit.offset?.some(n=>n!==0)))
     &&(fit.model!=='affine'||Array.isArray(fit.offset))
     &&[['amount',0,100],['exposure',-2,2],['warmth',-100,100],['tint',-100,100],['saturation',0,200]].every(([k,min,max])=>Number.isFinite(adjustments?.[k])&&adjustments[k]>=min&&adjustments[k]<=max);
 }
@@ -42,7 +43,7 @@ export function validLeaderPreset(profile) {
   const disposition=fitDisposition(profile?.fit);
   return validColorProfile(profile)&&profile.sample===false&&profile.source?.capture?.kind==='rig-video'&&!!colorSourceKey(profile.source.capture)
     &&typeof profile.name==='string'&&typeof profile.camera==='string'&&typeof profile.chart?.name==='string'
-    &&(disposition==='automatic'||disposition==='review'&&profile.reviewedFit===true)
+    &&(disposition==='automatic'||disposition==='manual'||disposition==='review'&&profile.reviewedFit===true)
     &&typeof profile.referenceImage?.dataUrl==='string'&&profile.referenceImage.dataUrl.startsWith('data:image/jpeg;base64,')&&profile.referenceImage.dataUrl.length<1000000
     &&profile.application?.scope==='browser-rig-preview';
 }
@@ -87,4 +88,49 @@ export function sharedPreviewStatus(profile,status,now=Date.now()) {
   // Followers deliberately share the leader's transform. Their camera identities
   // and settings are NOT required to equal the leader's.
   return {usable:true,label:`${profile.name} · shared correction from ${profile.camera}${leader.responding?'':' · leader offline, using saved preset'}`};
+}
+
+function matchesTransform(actual,expected) {
+  return Array.isArray(expected)&&expected.length===9&&Array.isArray(actual)&&actual.length===9&&
+    expected.every((value,i)=>Math.abs(value-actual[i])<=0.001);
+}
+
+// Results describe phone settings. Only a pending edit or a browser-only
+// preset is painted onto video. Confirmed phone output stays unfiltered.
+export function cameraColorView(phone,{status,profile,shared,draft,selectedIds}) {
+  const source=draft?.source||profile?.source.capture;
+  const application=draft?draft.previous:profile?.phoneApplication;
+  const selected=selectedIds.includes(phone.id);
+  if(!selected)return {label:'Outside the current selection · CameraScope video'};
+  if(!status?.connected || !Number.isFinite(status.checkedAt) || Math.abs(Date.now()-status.checkedAt)>20000)return {label:'Waiting for current camera status'};
+  if(!phone.responding)return {label:'Camera offline · current settings unknown'};
+  if(source?.kind==='rig-video'&&(source.rigBackend||'')===(status.backend||'')){
+    const sync=status.colorSync;
+    const sameSync=sync?.source==='adjust'&&sync.leaderId===source.cameraId&&sync.leaderIp===source.ip&&
+      matchesTransform(sync.snapshot?.colorCorrectionTransform,application?.transform);
+    const results=sameSync?sync.results:application?.results;
+    const reported=results?.find(r=>r.id===phone.id&&(!r.ip||r.ip===phone.ip));
+    const current=phone.state?.colorProcessing?.colorCorrectionTransform;
+    const sensor=phone.state?.effectiveColor?.transform;
+    const hasSensor=Array.isArray(sensor)&&sensor.length===9&&sensor.every(Number.isFinite);
+    const matched=matchesTransform(current,application?.transform);
+    if(draft){
+      if(application&&matched){
+        if(hasSensor&&!matchesTransform(sensor,application.transform))return {label:'See Before / after · waiting for the sensor transform'};
+        const relative=application.matrix&&application.adjustments&&relativeColorPreview(draft,{fit:{matrix:application.matrix},adjustments:application.adjustments});
+        return relative?{render:relative,label:'Unsaved slider preview'}:{label:'See Before / after for this edit · current stream cannot recover the original colors'};
+      }
+      if(application&&reported?.ok)return {label:'Camera settings changed · check the reference frame'};
+      return {render:draft,label:'Unsaved slider preview'};
+    }
+    if(application){
+      if(!reported)return {label:'Outside the last Apply · CameraScope video'};
+      if(!reported.ok)return {label:'Apply unconfirmed · see Last sync'};
+      if(!matched)return {label:'Settings changed since Apply'};
+      if(hasSensor)
+        return {label:matchesTransform(sensor,application.transform)?'Sensor transform matched · CameraScope video':'Requested settings matched · last sensor transform differs'};
+      return {label:'Settings matched · CameraScope video'};
+    }
+  }
+  return shared.usable?{render:profile,label:'Shared browser correction'}:{label:shared.label};
 }

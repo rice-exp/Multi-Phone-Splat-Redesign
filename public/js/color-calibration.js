@@ -204,6 +204,7 @@ function refineChannel(samples,channel,initial) {
 // The absolute target is for automatic activation. An improvement on both
 // the training patches and the leave-one-out check can be reviewed explicitly.
 export function fitDisposition(fit) {
+  if(fit?.model==='manual')return 'manual';
   const valid=n=>Number.isFinite(n)&&n>=0;
   if(!valid(fit?.after))return 'blocked';
   const v=fit.validation;
@@ -246,8 +247,28 @@ export function correctLinear(rgb,matrix=IDENTITY,adjustments=defaultAdjustments
   let v=rgb.map((n,k)=>n*(1-amount)+corrected[k]*amount);
   const gains=[2**(a.warmth/200),2**(-a.tint/200),2**(-a.warmth/200)];
   v=v.map((n,k)=>n*gains[k]*2**a.exposure);
+  if(a.saturation===100)return v;
   const gray=v[0]*0.2126+v[1]*0.7152+v[2]*0.0722;
   return v.map(n=>gray+(n-gray)*a.saturation/100);
+}
+
+// The live stream may already contain the last phone correction. Solve
+// delta * previous = desired so previewing the next edit doesn't stack them.
+export function relativeColorPreview(desired,previous) {
+  const basis=profile=>IDENTITY.map(channel=>correctLinear(channel,profile.fit.matrix,profile.adjustments));
+  const existing=basis(previous),next=basis(desired);
+  try {
+    const matrix=IDENTITY.map((_,i)=>solveLinear(existing,next.map(column=>column[i])));
+    if(matrix.flat().some(value=>!Number.isFinite(value)))return null;
+    return {fit:{matrix},adjustments:defaultAdjustments()};
+  } catch {
+    // Even after a grayscale write, changes that use only the remaining
+    // luminance (for example exposure) can still be previewed.
+    const pivot=existing.reduce((best,column,i)=>Math.abs(column[0])>Math.abs(existing[best][0])?i:best,0);
+    const scale=next[pivot].map(value=>value/existing[pivot][0]);
+    if(!scale.every(Number.isFinite)||!existing.every((column,i)=>next[i].every((value,k)=>Math.abs(value-column[0]*scale[k])<1e-8)))return null;
+    return {fit:{matrix:scale.map(value=>[value,0,0])},adjustments:defaultAdjustments()};
+  }
 }
 
 const decodeTable=Array.from({length:256},(_,n)=>decodeSRGB(n/255));
