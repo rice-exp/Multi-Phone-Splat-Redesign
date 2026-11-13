@@ -40,7 +40,11 @@ test('server serves real workflows and refuses invented participant capture cues
   assert.equal(configWrite.status,200);
   const independent=await(await fetch(`${origin}/api/rig/status`)).json();assert.equal(independent.connected,true);assert.equal(independent.phones.length,0);assert.equal(independent.backend,undefined);
   const badWrite=await fetch(`${origin}/api/rig/config`,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json','X-Rig-Request':'1'},body:JSON.stringify({pythonExecutable:'arbitrary.exe'})});assert.equal(badWrite.status,400);
-  const invalid=await fetch(`${origin}/api/participant/state`,{method:'POST',body:JSON.stringify({phase:'pretend-recording'})});assert.equal(invalid.status,501);
+  const capture=await(await fetch(origin+'/api/rig/capture')).json();
+  assert.deepEqual(capture.phones,[]);assert.equal(capture.job,null);
+  const start=await fetch(origin+'/api/rig/capture',{method:'POST',headers:{'Content-Type':'application/json','X-Rig-Request':'1'},body:JSON.stringify({ids:[],name:'Test',frameCount:1})});
+  assert.equal(start.status,400);
+  const invalid=await fetch(`${origin}/api/participant/state`,{method:'POST',body:JSON.stringify({phase:'pretend-recording'})});assert.equal(invalid.status,405);
   const external=await fetch(`${origin}/api/participant/state`,{method:'POST',headers:{Origin:'http://external.example'},body:JSON.stringify({phase:'done'})});assert.equal(external.status,403);
   const controller=new AbortController();t.after(()=>controller.abort());
   const copy=await fetch(origin+'/api/rig/color-copy',{method:'POST',headers:{'Content-Type':'application/json','X-Rig-Request':'1'},body:JSON.stringify({ids:[],leaderId:'unknown'})});
@@ -48,8 +52,8 @@ test('server serves real workflows and refuses invented participant capture cues
   const adjust=await fetch(origin+'/api/rig/color-adjust',{method:'POST',headers:{'Content-Type':'application/json','X-Rig-Request':'1'},body:JSON.stringify({ids:[],leaderId:'unknown'})});
   assert.equal(adjust.status,400);assert.equal((await adjust.json()).code,'INVALID_SELECTION');
   const stream=await fetch(`${origin}/api/participant/events`,{signal:controller.signal});
-  const reader=stream.body.getReader();const event=new TextDecoder().decode((await reader.read()).value);assert.match(event,/"available":false/);assert.match(event,/"phase":null/);
+  const reader=stream.body.getReader();const event=new TextDecoder().decode((await reader.read()).value);assert.match(event,/"available":true/);assert.match(event,/"phase":"idle"/);
   const post=await fetch(`${origin}/api/participant/state`,{method:'POST',headers:{Origin:origin},body:JSON.stringify({phase:'capturing',remaining:3,sessionName:'Test take'})});
-  assert.equal(post.status,501);assert.equal((await post.json()).code,'CAPTURE_NOT_CONNECTED');
+  assert.equal(post.status,405);assert.equal((await post.json()).code,'READ_ONLY');
   controller.abort();
 });

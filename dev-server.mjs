@@ -7,9 +7,11 @@ import {FrameReview} from './lib/frame-review.mjs';
 import {RigService,privateAddress} from './lib/rig-service.mjs';
 import {RigConfigStore} from './lib/rig-config.mjs';
 import {MediaGateway} from './lib/gateway.mjs';
+import {CaptureSession} from './lib/capture-session.mjs';
 const configStore=new RigConfigStore(),gateway=new MediaGateway();
-const rig=new RigService({configStore,gateway});
+const rig=new RigService({configStore,gateway,workflow:async()=>({state:rig.busy==='capture'?'running':'idle'})});
 const review=new FrameReview({configStore});
+const capture=new CaptureSession({rig,review});
 try {
   const config=await configStore.initialize();
   if(config.phones.length&&process.env.RIG_GATEWAY_AUTOSTART!=='0')await gateway.start(config);
@@ -18,8 +20,9 @@ const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
 const args=Object.fromEntries(process.argv.slice(2).map(a=>a.replace(/^--/,'').split('=')));
 const host=args.host||process.env.HOST||'127.0.0.1';
 const port=Number(args.port||process.env.PORT||4317);
-const participant={available:false,phase:null,sessionName:null,remaining:null,updatedAt:null};
 const clients=new Set();
+const participantEvent=()=>`data: ${JSON.stringify(capture.participant())}\n\n`;
+capture.onChange=()=>{for(const res of clients)res.write(participantEvent());};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
 const server=http.createServer(async(req,res)=>{
   try {
@@ -48,12 +51,16 @@ const server=http.createServer(async(req,res)=>{
       if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{error:'Same-origin requests only'});
       if(url.pathname==='/api/rig/config'&&req.method==='GET')return json(res,200,{config:configStore.public(await configStore.read())});
       if(url.pathname==='/api/rig/status'&&req.method==='GET')return json(res,200,await rig.refresh());
+      if(url.pathname==='/api/rig/capture'&&req.method==='GET')return json(res,200,await capture.status());
       if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});
       if(req.headers['x-rig-request']!=='1'||!req.headers['content-type']?.startsWith('application/json'))return json(res,403,{error:'Use the Prepare rig controls.'});
       let body='';
       for await(const chunk of req){body+=chunk;if(body.length>(url.pathname==='/api/rig/config'?65536:8192))return json(res,413,{error:'Request too large'});}
       const value=JSON.parse(body||'{}');
       if(!value||typeof value!=='object'||Array.isArray(value))return json(res,400,{error:'Expected a JSON object.'});
+      if(closing)return json(res,503,{error:'The server is shutting down.'});
+      if(url.pathname==='/api/rig/capture')return json(res,202,await capture.start(value));
+      if(url.pathname==='/api/rig/capture-retry')return json(res,202,capture.retry(value.session));
       if(url.pathname==='/api/rig/refresh')return json(res,200,await rig.refresh(true));
       if(url.pathname==='/api/rig/config')return json(res,200,await rig.configure(value));
       if(['/api/rig/gateway-start','/api/rig/gateway-stop'].includes(url.pathname))return json(res,200,await rig.controlGateway(url.pathname.endsWith('start')?'start':'stop'));
@@ -67,15 +74,13 @@ const server=http.createServer(async(req,res)=>{
     }
     if(url.pathname==='/api/participant/events'&&req.method==='GET') {
       res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive','X-Accel-Buffering':'no'});
-      clients.add(res);res.write(`data: ${JSON.stringify(participant)}\n\n`);
-      const heartbeat=setInterval(()=>res.write(': heartbeat\n\n'),10000);
+      clients.add(res);res.write(participantEvent());
+      const heartbeat=setInterval(()=>res.write(participantEvent()),2000);
       req.on('close',()=>{clients.delete(res);clearInterval(heartbeat);});return;
     }
     if(url.pathname==='/api/participant/state'&&req.method==='POST') {
-      // The capture job must become the authority for this display. Retired
-      // browser simulations may not publish an invented countdown/completion.
       if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{error:'Same-origin requests only'});
-      return json(res,501,{error:'Capture status is not connected. Browser-generated capture cues are disabled.',code:'CAPTURE_NOT_CONNECTED'});
+      return json(res,405,{error:'Only the capture job publishes participant status.',code:'READ_ONLY'});
     }
     if(url.pathname==='/api/demo-status')return json(res,410,{error:'The preview interface has been removed.'});
     if(!['GET','HEAD'].includes(req.method))return json(res,405,{error:'Method not allowed'});
@@ -91,5 +96,5 @@ const server=http.createServer(async(req,res)=>{
 server.listen(port,host,()=>console.log(`Rice Experiential Pixels Lab: http://${host}:${port}\nLocal rig configuration: ${configStore.file}\nFrame review: http://${host}:${port}/frames\nParticipant display: http://${host}:${port}/participant.html`));
 server.on('error',error=>{console.error(error.message);process.exitCode=1;});
 let closing=false;
-const close=async()=>{if(closing)return;closing=true;for(const res of clients)res.end();await gateway.stop().catch(error=>console.error(error.message));server.close(()=>process.exit(0));server.closeAllConnections();};
+const close=async()=>{if(closing)return;closing=true;await capture.finished;for(const res of clients)res.end();await gateway.stop().catch(error=>console.error(error.message));server.close(()=>process.exit(0));server.closeAllConnections();};
 process.on('SIGINT',close);process.on('SIGTERM',close);

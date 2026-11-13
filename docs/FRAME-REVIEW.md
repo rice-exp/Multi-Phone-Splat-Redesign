@@ -1,10 +1,10 @@
 # Frame review: saved CameraScope captures
 
-Frame review reads actual transferred images and the original application's `frame-manifest.json`. It runs in the standalone redesign: no original webapp, phones, Python, or live preview streams are required to inspect saved captures. Capture and transfer themselves are still separate integration work.
+Frame review reads actual transferred images and the original application's `frame-manifest.json`. It runs in the standalone redesign: no original webapp, phones, Python, or live preview streams are required to inspect saved captures. The Capture tab writes new sessions in the same format.
 
 ## Start on the lab computer
 
-Use the `feature/frame-review` implementation, based on `Camerascope-features` at `2ffe22f`, which includes standalone CameraScope controls and the merged calibration workspace.
+Use the same output folder for Capture and Frame review.
 
 1. Find the **capture output folder** on the lab computer. It contains a `frames` directory. Do not select an individual session or the `frames` directory itself.
 2. Open PowerShell in the redesign repository. Point it at that output folder and start the server:

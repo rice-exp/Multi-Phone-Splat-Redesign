@@ -94,7 +94,7 @@ async function library(){
     $('review-session').innerHTML=sessions.length?sessions.map(session=>`<option value="${esc(session.id)}">${esc(session.id)}${session.error?' · Needs attention':''}</option>`).join(''):'<option value="">No transferred sessions</option>';
     $('review-session').disabled=!sessions.length;
     $('review-empty').hidden=!!sessions.length;
-    $('review-empty').innerHTML=`<div class="rig-empty">${icon('folder',32)}<h3>No transferred captures found</h3><p>Finish a transfer or point the server to an existing capture folder. Open “Capture folder and setup” above for the expected structure.</p></div>`;
+    $('review-empty').innerHTML=`<div class="rig-empty">${icon('folder',32)}<h3>No saved sessions yet</h3><p>Record a session with your selected cameras or choose an existing capture folder.</p><a class="button secondary" href="/capture">Open Capture</a></div>`;
     $('review-session-info').textContent=sessions.length?`${sessions.length} saved session${sessions.length===1?'':'s'}`:'No transferred captures available.';
     if(sessions.length){$('review-session').value=sessions.some(item=>item.id===previous)?previous:sessions[0].id;await loadSession();}
   }catch(error){if(!controller.signal.aborted){errorMessage(error);$('review-session').innerHTML='<option value="">Session list unavailable</option>';$('review-session-info').textContent='Refresh sessions to retry.';}}

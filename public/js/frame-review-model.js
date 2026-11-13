@@ -3,7 +3,7 @@
 export const FILE_STATES = {
   available: {label:'Image available', next:'Inspect focus, framing and motion across cameras.'},
   capture_dropped: {label:'Dropped during capture', next:'No saved image was reported. Inspect the capture report; a transfer retry cannot recover an unsaved frame.'},
-  transfer_failed: {label:'Transfer failed', next:'The image was reported saved on the phone. Retry its transfer with the capture application, then refresh this session.'},
+  transfer_failed: {label:'Transfer failed', next:'The phone reported a saved image. For the current take, use Retry missing transfers in Capture, then reload this session.'},
   missing: {label:'File missing on computer', next:'The manifest names a file that is absent or empty. Check the capture folder or repeat the transfer, then refresh.'},
   unsupported: {label:'Preview unsupported', next:'This image format cannot be displayed here. Use the original file in a compatible viewer.'},
   unrecorded: {label:'No camera record', next:'This camera has no entry for this sequence index. Inspect the capture report and transfer manifest.'},

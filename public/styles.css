@@ -3691,6 +3691,16 @@ dialog::backdrop {
 .rig-fields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
 .rig-fields label { display: grid; gap: 8px; font-size: 13px; font-weight: 600; }
 .rig-fields input,.rig-fields select { width: 100%; min-width: 0; }
+#take-form fieldset { margin:20px 0 12px; padding:12px 0; border:0; }
+#take-form legend { font-weight:600; }
+#take-form .cal-fields label { display:grid; gap:8px; font-size:13px; font-weight:600; }
+#take-form .cal-fields input { min-width:0; width:100%; }
+#take-folder { overflow-wrap:anywhere; }
+#take-list,.take-actions { display:flex; flex-wrap:wrap; gap:12px 24px; align-items:center; }
+#take-list label { display:flex; align-items:center; gap:7px; cursor:pointer; }
+#take-form input[type=checkbox] { width:16px; height:16px; }
+#take-error:not(:empty),#take-setup:not(:empty),#take-warnings:not(:empty),#take-job p:not(:empty) { margin:12px 0; }
+.take-actions [hidden],#take-job[hidden] { display:none; }
 .rig-settings-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 20px 0 10px; }
 .rig-settings-footer p,.rig-caption { color: #61716d; font-size: 13px; line-height: 1.65; }
 .rig-caption { margin-top: 12px; }

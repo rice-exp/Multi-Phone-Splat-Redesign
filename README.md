@@ -2,7 +2,7 @@
 
 A guided interface for a multi-phone 4D capture rig. **Prepare rig now runs independently of the old webapp.** It owns persistent CameraScope configuration and the bundled MediaMTX gateway, checks each phone over UDP, starts/stops selected wireless streams, displays live H.264 video, applies selected settings, and checks clock offsets using the independent CameraScope CLI. The Android app is unchanged.
 
-The website displays configured devices, observed device status, real camera or uploaded images, and saved capture manifests. **Frame review reads saved CameraScope captures at `/frames`.** Color calibration processes actual image pixels at `/calibration`. Geometry acquisition/solving, capture, transfers, reconstruction, a trained-splat viewer, and participant capture status are not integrated yet; their screens report that limitation without generated results. The preview interface has been retired.
+The website displays configured devices, observed device status, real camera or uploaded images, and saved capture manifests. **Frame review reads saved CameraScope captures at `/frames`.** Color calibration processes actual image pixels at `/calibration`. The Capture tab records synchronized CameraScope sequences, transfers JPEGs to this computer and drives the participant display. Geometry acquisition, reconstruction and trained-splat review are pending. The preview interface has been retired.
 
 For lab setup, supported commands, and the required hardware checks, read [Prepare rig setup](docs/PREPARE-RIG.md).
 
@@ -10,7 +10,7 @@ For lab setup, supported commands, and the required hardware checks, read [Prepa
 
 1. Install Node.js 20 or newer from [nodejs.org](https://nodejs.org/). Restart your terminal after installation.
 2. In GitHub Desktop, choose **File → Clone repository → URL**, paste this repository’s URL, and choose a folder.
-3. Select the `feature/frame-review` branch for saved-frame review and the latest merged CameraScope/calibration work.
+3. Select the `calibration` branch for the Capture, Color calibration and Frame review workflows.
 4. Choose **Repository → Open in Terminal** in GitHub Desktop.
 5. Run:
 
@@ -28,6 +28,14 @@ There are no packages to install; `npm install` is unnecessary. `node dev-server
 
 Use **Dark mode** in the upper right to change the interface theme. The app starts with your system preference, then remembers your choice across pages and tabs in this browser. Camera images and calibration pixels are unaffected. The Rice crest is bundled locally; the link below the lab title opens `https://pixels.rice.edu/` in a new tab.
 
+## Record a session
+
+1. Configure the CameraScope desktop CLI and Python on the laptop using the [CLI setup instructions](docs/PREPARE-RIG.md#saved-configuration-and-clock-cli). The `.camerascope` directory in this project holds the rig configuration. `CAMERASCOPE_ROOT` must point to the CameraScope installation containing `scripts/camerascope_cli.py`.
+2. In **Capture**, name the session, choose the cameras and enter the number of frames per camera (1–300). Open **Participant display** on the participant’s screen.
+3. Select **Record and save**. The server refreshes clock synchronization, aligns the selected phones and schedules a JPEG sequence. The participant display follows the take. You can leave the tab while the server runs.
+4. CameraScope transfers the saved JPEGs over Wi-Fi to the computer IP from Prepare rig, using TCP port 8080 by default (`wirelessTransferPort` in the local rig configuration). The operator sees counts for images saved on the phones and images received on the laptop. For a partial transfer, choose **Retry missing transfers** while that take is current.
+5. Select **Open in Frame review**. Each session has its own `frames/SESSION` folder with the CameraScope report, manifest and JPEGs grouped by sequence index for later reconstruction.
+
 ## Review saved captures
 
 Open **http://localhost:4317/frames**, or select **Frame review** from Prepare rig. Choose a transferred capture session, scrub a common sequence index across cameras, enlarge images, inspect timing, and identify capture drops separately from transfer failures or missing local files. Playback, display filters, image rotation, and JSON review exports are available. These actions do not modify capture files or command phones.
@@ -40,21 +48,21 @@ Review reads `outputRoot/frames/SESSION/frame-manifest.json`. To open captures f
 | --- | --- | --- |
 | Prepare rig | `/` | Configured phones, UDP status, settings readback, clock checks and live previews |
 | Calibration | `/calibration` | Color correction measured from a camera frame or uploaded chart photo |
-| Capture | `/capture` | Unavailable until capture and transfer jobs are integrated |
+| Capture | `/capture` | Records selected cameras, transfers JPEGs and saves an ordered session |
 | Frame review | `/frames` | Read-only review of saved CameraScope captures |
 | Reconstruction | `/reconstruction` | Unavailable until training jobs are integrated |
 | Splat review | `/splats` | Unavailable until actual splat loading is integrated |
-| Participant | `/participant.html` | Inactive; capture status is not connected yet |
+| Participant | `/participant.html` | Shows the current server-owned take |
 
 Old `?demo=1` and workflow hash bookmarks open the corresponding current screen. They cannot restore sample cameras, warnings, takes, timers or splats from browser storage. Synthetic color profiles are also excluded. The former interface is kept only as source reference under `archive/prototype/`, outside the web server's public directory.
 
 ## Participant display
 
-**Preparing → In progress → Done** remain visible together, with all stages inactive until real capture status is available. There is no simulated countdown or completion cue. Server connectivity alone does not mean a capture is running.
+Open the participant display before you press **Record and save**. It shows preparation, prompts the participant during recording, and tells them when recording has ended and images are being saved. Completion appears after every expected image is on the laptop. A partial take prompts the participant to wait for the operator.
 
 On the same computer, open `http://localhost:4317/participant.html`. For a separate display on the same private network, start `npm start -- --host=0.0.0.0`, then open `http://COMPUTER-LAN-IP:4317/participant.html`, substituting the computer's actual IPv4 address. Display placement is a one-time setup; browsers cannot silently move a window to another monitor.
 
-Use one operator at a time. This local server has no authentication or TLS; keep it on a trusted private network. Prepare rig sends real commands. Its operation lock does not control other applications, and the old gateway must be stopped because its ports overlap. To use the original capture application, stop this server and gateway first; point Frame review at the resulting saved captures when returning to the redesign.
+Use one operator at a time. This local server has no authentication or TLS; keep it on a trusted private network. Prepare rig sends real commands. Its operation lock does not control other applications, and the old gateway must be stopped because its ports overlap.
 
 ## How three teammates can work independently
 
@@ -94,7 +102,7 @@ In [Color calibration](docs/COLOR-CALIBRATION.md), choose a leader and sync its 
 | `archive/prototype/` | Retired simulation source; not served or imported by the website |
 | `public/js/participant.js` | Three-stage screen and reconnect/stale handling |
 | `public/js/capture-metrics.js` | Timing/count calculations ported from the original project |
-| `dev-server.mjs` | Static server, rig/review APIs and unavailable participant-status feed |
+| `dev-server.mjs` | Static server, rig, capture and review APIs, and live participant status |
 | `test/` | Rig, color, frame review, route and participant-state tests; archived prototype tests remain separate |
 
 Run **`npm test`** before opening a pull request. GitHub Actions runs the same checks. No camera or GPU is required.
