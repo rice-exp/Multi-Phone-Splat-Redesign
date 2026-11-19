@@ -6,7 +6,7 @@ Android code and features are unchanged.
 
 ## Start the redesign
 
-1. Check out `feature/frame-review` and install Node.js 20 or newer.
+1. Update your checkout to the version being tested and install Node.js 20 or newer.
 2. Stop the old webapp and its gateway so their ports are free.
 3. Run `npm start` in the redesign folder. No npm packages need installing.
 4. Open `http://127.0.0.1:4317/`, then **Connection setup**.
@@ -111,16 +111,22 @@ another controller concurrently. There is no distributed lock with the old app.
 
 - Phone observations poll every five seconds and expire after 20 seconds.
   Gateway readiness, phone response, matching stream destination and actual
-  browser frame progress are separate observations. A stale or mismatched phone
-  route cannot display a supposedly identified live camera.
+  browser frame progress are separate observations. Prepare rig retains a preview
+  across a missed status reply only if its unchanged route was confirmed within
+  the last 20 seconds and the gateway reports increasing received bytes. The phone
+  is still marked **Not responding**, with settings and clock results unavailable.
+  Expired, stopped or mismatched routes close the preview.
 - **Live** requires displayed frames to advance. Stalls lose the green label and
   reconnect. **Retry** reconnects only the browser; **Enlarge** expands the card.
   The player is receive-only and needs no camera/microphone permission or public
   STUN service. WHEP sessions and peers are released on retry, disconnect and exit.
 - Toggling streams/destinations can restart CameraScope's pipeline. Finish takes and
   recordings first. Selected phones reporting H.264 recording reject settings
-  and stream mutations. Commands require acknowledgements and matching state;
-  timeouts are not automatically retried because a command may have arrived.
+  and stream mutations. Read-only status requests retry up to twice within the
+  original timeout. Writes are sent once. Stream changes allow a longer startup
+  acknowledgement and poll matching state; a lost acknowledgement can succeed
+  only when independent readback confirms the requested stream. An explicit
+  rejection remains a failure. See [CameraScope compatibility](CAMERASCOPE-COMPATIBILITY.md).
 - Clock checks use `sync-many --no-save`; offsets expire after 60 seconds and are
   cleared on disconnect, configuration changes, setting changes and stream changes.
   They do not set phone clocks or establish sensor phase/capture readiness.
@@ -180,5 +186,6 @@ phones and the deployed wireless network still need these checks:
 8. Check previews from the intended operator device and finish physical timing/
    image-quality checks before a research session.
 
-Source contracts were checked against Multi-Phone-Splat `8060792` and
-CloneCameraScope `1c17f73`. The installed Android revision still needs confirmation.
+Source contracts were checked against Multi-Phone-Splat `8060792`,
+CloneCameraScope `1c17f73`, and CameraScope `kp-camerascope-test` at `05bfcaa`.
+The installed APK revision and mixed-version behavior still need lab validation.

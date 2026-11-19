@@ -11,7 +11,7 @@ function fixture(overrides={}) {
   let clock=100000, fail=false, running=false, configFail=false, syncReport, commands=[], executions=[];
   const states=new Map(['192.168.50.101','192.168.50.102'].map((ip,i)=>[ip,{iso:100,exposureMs:8,frameDurationMs:1000/30,autoExposureEnabled:false,isCapturing:true,streamEnabled:true,udpHost:'192.168.50.10',udpVideoPort:5004+i*2,udpMetadataPort:6004+i*2,colorProcessing:{awbMode:'OFF',awbLock:false}}]));
   const config={phones:[{id:'cam-1',name:'Front',ip:'192.168.50.101'},{id:'cam-2',name:'Rear',ip:'192.168.50.102'}], pcIp:'192.168.50.10', cameraScopeRoot:'/lab/CameraScope', pythonExecutable:'python',iso:100,exposureMs:8,frameRate:30,colorProcessing:{awbMode:'OFF',awbLock:false}};
-  const service=new RigService({now:()=>clock,configStore:{read:async()=>{if(configFail)throw Object.assign(Error('Local config unreadable'),{code:'CONFIG_UNAVAILABLE'});return config;}},
+  const service=new RigService({now:()=>clock,wait:async()=>{},configStore:{read:async()=>{if(configFail)throw Object.assign(Error('Local config unreadable'),{code:'CONFIG_UNAVAILABLE'});return config;}},
     gateway:{state:async()=>({running:true,routes:config.phones.map((phone,i)=>({name:`cam-${i+1}`,ip:phone.ip,videoPort:5004+i*2,metadataPort:6004+i*2,ready:i===0}))})},
     workflow:async()=>({state:running?'running':'idle'}),
     command:async(ip,payload)=>{commands.push({ip,payload});if(fail&&ip.endsWith('102'))throw Object.assign(Error('Timed out'),{code:'PHONE_TIMEOUT'});if(payload.cmd==='set'){const {cmd,capture,...patch}=payload;Object.assign(states.get(ip),patch);if(typeof capture==='boolean')states.get(ip).isCapturing=capture;}return {ok:true,state:{...states.get(ip)}};},run:async(exe,args)=>{executions.push({exe,args});return {stdout:JSON.stringify(args.includes('sync-many')?(syncReport||{results:[{host:'192.168.50.101',ok:true,summary},{host:'192.168.50.102',ok:true,summary}]}):{ok:true})};},...overrides});
@@ -58,6 +58,139 @@ test('preview changes clear clock results and work without Python',async()=>{
   const f=fixture();await f.service.operate('sync',['cam-1']);assert.ok(f.service.status().phones[0].sync);
   f.config.pythonExecutable=null;await f.service.operate('preview-start',['cam-1']);
   assert.equal(f.service.status().phones[0].sync,null);
+});
+
+test('mixed app versions receive compatible preview settings without changing sensor or stream quality',async()=>{
+  const f=fixture();
+  const modern=f.states.get('192.168.50.102');
+  Object.assign(modern,{streamCodec:'hevc',streamCodecActive:'hevc',streamWidth:1280,streamHeight:720,streamBitrateMbps:4});
+  const command=f.service.command;
+  f.service.command=async(ip,payload,options)=>{
+    const response=await command(ip,payload,options);
+    if(payload.cmd==='set'&&payload.streamCodec){modern.streamCodecActive=payload.streamCodec;response.state={...modern};}
+    return response;
+  };
+  const result=await f.service.operate('preview-start',['cam-1','cam-2']);
+  assert.equal(result.ok,true);
+  const writes=f.commands.filter(c=>c.payload.cmd==='set');
+  assert.equal(writes[0].payload.streamCodec,undefined);
+  assert.equal(writes[1].payload.streamCodec,'avc');assert.equal(writes[1].payload.streamEncoder,'');
+  assert.equal(writes[1].payload.capture,undefined);
+  assert.equal(modern.streamWidth,1280);assert.equal(modern.streamHeight,720);assert.equal(modern.streamBitrateMbps,4);
+  assert.equal(modern.iso,100);assert.equal(modern.colorProcessing.awbMode,'OFF');
+});
+
+test('preview startup waits for a new app encoder and does not resend the mutation',async()=>{
+  const f=fixture();const state=f.states.get('192.168.50.101');
+  Object.assign(state,{streamEnabled:false,isCapturing:false,streamCodec:'avc',streamCodecActive:null});
+  const command=f.service.command;let reads=0,started=false;
+  f.service.command=async(ip,payload,options)=>{
+    if(ip.endsWith('101')){
+      if(payload.cmd==='set')started=true;
+      if(started&&payload.cmd==='getState'&&++reads===3)state.streamCodecActive='avc';
+    }
+    return command(ip,payload,options);
+  };
+  const result=await f.service.operate('preview-start',['cam-1']);
+  assert.equal(result.ok,true);assert.ok(reads>=3);
+  assert.equal(f.commands.filter(c=>c.payload.cmd==='set').length,1);
+  assert.equal(f.commands.find(c=>c.payload.cmd==='set').payload.capture,true);
+});
+
+test('a lost stream acknowledgement succeeds only with independent matching readback',async()=>{
+  for(const applied of [true,false]){
+    const f=fixture();f.states.get('192.168.50.101').streamEnabled=false;
+    const command=f.service.command;let writes=0;
+    f.service.command=async(ip,payload,options)=>{
+      if(payload.cmd==='set'){
+        writes++;if(applied)await command(ip,payload,options);
+        throw Object.assign(Error('Reply lost'),{code:'PHONE_TIMEOUT'});
+      }
+      return command(ip,payload,options);
+    };
+    const result=await f.service.operate('preview-start',['cam-1']);
+    assert.equal(result.ok,applied);assert.equal(writes,1);
+    if(applied)assert.equal(result.results[0].acknowledgementLost,true);
+    else assert.equal(result.results[0].error.code,'PREVIEW_NOT_CONFIRMED');
+  }
+});
+
+test('explicit stream command rejection is never turned into success by matching old state',async()=>{
+  const f=fixture();const command=f.service.command;
+  f.service.command=(ip,payload,options)=>{
+    if(payload.cmd==='set')throw Object.assign(Error('Encoder unavailable'),{code:'PHONE_RESPONSE'});
+    return command(ip,payload,options);
+  };
+  const result=await f.service.operate('preview-start',['cam-1']);
+  assert.equal(result.ok,false);assert.equal(result.results[0].error.code,'PHONE_RESPONSE');
+});
+
+test('modern codec mismatch and encoder failures explain missing preview instead of showing ready',async()=>{
+  const f=fixture();const state=f.states.get('192.168.50.101');
+  Object.assign(state,{streamCodec:'hevc',streamCodecActive:'hevc'});
+  let status=await f.service.refresh(true);
+  assert.equal(status.phones[0].responding,true);assert.equal(status.phones[0].previewReady,false);
+  assert.equal(status.phones[0].previewIssue.code,'PREVIEW_CODEC_UNSUPPORTED');
+  Object.assign(state,{streamCodec:'avc',streamCodecActive:null,streamError:'No encoder supports requested size'});
+  status=await f.service.refresh(true);
+  assert.equal(status.phones[0].previewIssue.code,'PREVIEW_ENCODER_FAILED');
+  const result=await f.service.operate('preview-start',['cam-1']);
+  assert.equal(result.ok,false);assert.equal(result.results[0].error.code,'PREVIEW_ENCODER_FAILED');
+});
+
+test('new app must report its active codec; requested settings alone cannot confirm streaming',async()=>{
+  const f=fixture();Object.assign(f.states.get('192.168.50.101'),{streamCodec:'avc'});
+  const result=await f.service.operate('preview-start',['cam-1']);
+  assert.equal(result.ok,false);assert.equal(result.results[0].error.code,'PREVIEW_NOT_CONFIRMED');
+});
+
+function advancingVideoFixture(){
+  const f=fixture();let bytes=100,ready=true;
+  f.service.gateway={state:async()=>({running:true,routes:[{name:'cam-1',ip:f.config.phones[0].ip,videoPort:5004,metadataPort:6004,ready,inboundBytes:bytes}]})};
+  const command=f.service.command;
+  return {...f,bytes:n=>bytes=n,videoOffline:()=>ready=false,
+    missStatus:()=>{f.service.command=async(ip,payload,options)=>{if(ip.endsWith('101'))throw Object.assign(Error('Lost status'),{code:'PHONE_TIMEOUT'});return command(ip,payload,options);};}};
+}
+
+test('advancing video survives a dropped status reply but control, settings and clocks stay unknown',async()=>{
+  const f=advancingVideoFixture();await f.service.operate('sync',['cam-1']);
+  await f.service.operate('settings',['cam-1'],settings);
+  f.advance(5000);f.bytes(200);f.missStatus();
+  const {phones:[phone]}=await f.service.refresh(true);
+  assert.equal(phone.previewReady,true);assert.equal(phone.previewStatusPending,true);
+  assert.equal(phone.previewConfigured,false);assert.equal(phone.responding,false);
+  assert.equal(phone.state,null);assert.equal(phone.settings,null);assert.equal(phone.sync,null);
+  const browserStatus=f.service.status();
+  f.advance(16000);assert.equal(f.service.status().phones[0].previewReady,false);
+  assert.equal(observedPhones(browserStatus,browserStatus.checkedAt+16000)[0].previewReady,false);
+  f.bytes(300);assert.equal((await f.service.refresh(true)).phones[0].previewReady,false);
+});
+
+test('preview grace requires new bytes, a ready gateway and unchanged route identity',async()=>{
+  for(const change of [f=>f.bytes(100),f=>f.videoOffline(),f=>f.config.pcIp='192.168.50.11',
+    f=>f.config.phones.reverse(),f=>f.config.phones[0].ip='192.168.50.111',f=>f.config.phones[0].id='replacement']){
+    const f=advancingVideoFixture();await f.service.refresh(true);f.advance(5000);f.bytes(200);f.missStatus();change(f);
+    assert.equal((await f.service.refresh(true)).phones[0].previewReady,false);
+  }
+});
+
+test('a stopped stream or explicit negative readback cancels preview grace immediately',async()=>{
+  const f=advancingVideoFixture();await f.service.refresh(true);
+  f.states.get('192.168.50.101').streamEnabled=false;f.bytes(200);
+  assert.equal((await f.service.refresh(true)).phones[0].previewReady,false);
+  f.missStatus();f.bytes(300);assert.equal((await f.service.refresh(true)).phones[0].previewReady,false);
+});
+
+test('an uncertain stop never retains preview grace after an old snapshot',async()=>{
+  const f=advancingVideoFixture();await f.service.refresh(true);const command=f.service.command;let sent=false;
+  f.service.command=async(ip,payload,options)=>{
+    if(ip.endsWith('101')&&(payload.cmd==='set'||sent)){
+      sent=true;f.bytes(200);throw Object.assign(Error('Lost response'),{code:'PHONE_TIMEOUT'});
+    }
+    return command(ip,payload,options);
+  };
+  const result=await f.service.operate('preview-stop',['cam-1']);
+  assert.equal(result.ok,false);assert.equal(result.status.phones[0].previewReady,false);
 });
 test('real inventory and response/gateway status replace demo devices',async()=>{
   const f=fixture();f.offline();const status=await f.service.refresh();

@@ -5,7 +5,9 @@ export function observedPhones(status, now = Date.now()) {
   const fresh = status.connected && now - status.checkedAt <= FRESH_MS;
   return (status.phones || []).map(phone => ({...phone,
     responding:!!fresh && phone.responding,
-    previewReady:!!fresh && phone.previewReady,
+    previewReady:!!fresh && phone.previewReady && (!phone.previewStatusPending ||
+      (Number.isFinite(phone.previewConfirmedAt) && now - phone.previewConfirmedAt <= FRESH_MS)),
+    previewStatusPending:!!fresh && phone.previewStatusPending && Number.isFinite(phone.previewConfirmedAt) && now - phone.previewConfirmedAt <= FRESH_MS,
     sync:fresh && phone.responding && phone.sync && now - phone.sync.checkedAt < 60000 ? phone.sync : null
   }));
 }
