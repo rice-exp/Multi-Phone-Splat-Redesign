@@ -13,9 +13,9 @@ test('missing AE reporting is partial verification rather than a fabricated mism
   const report=settingsVerification(legacyState,requested);
   assert.equal(report.status,'partial');assert.deepEqual(report.fields.filter(f=>f.status==='unreported').map(f=>f.key),['autoExposureEnabled']);
   assert.match(verificationMessage(report),/ISO, exposure and frame interval match/);
-  assert.match(verificationMessage(report),/Auto exposure/);
+  assert.doesNotMatch(verificationMessage(report),/auto exposure|not reported|unverified/i);
   assert.equal(settingsMatch(legacyState,requested),false);
-  assert.deepEqual(configurationStatus({responding:true,state:legacyState},requested),{label:'Settings partly verified',tone:'warning'});
+  assert.deepEqual(configurationStatus({responding:true,state:legacyState},requested),{label:'Reported settings match',tone:'success'});
 });
 test('real ISO and frame-interval differences remain errors with requested/reported values',()=>{
   const report=settingsVerification(legacyState,{...requested,iso:6400,frameRate:30});
@@ -31,14 +31,14 @@ test('missing core values cannot pass; reported AE-on and white balance conflict
   assert.equal(settingsVerification({...legacyState,colorProcessing:{awbMode:'AUTO',awbLock:false}},requested).status,'mismatch');
   assert.equal(settingsVerification({...legacyState,autoExposureEnabled:false},requested).status,'confirmed');
 });
-test('the settings operation accepts legacy numeric readback with an explicit warning, never resending the write',async()=>{
+test('the settings operation accepts legacy numeric readback quietly, never resending the write',async()=>{
   const commands=[];
   const service=new RigService({configStore:{read:async()=>({phones:[{id:'cam-1',ip:'192.168.1.101'}]})},gateway:{state:async()=>({running:false,routes:[]})},
     command:async(ip,payload)=>{commands.push(payload);return {ok:true,state:structuredClone(legacyState)};}});
   const result=await service.operate('settings',['cam-1'],requested);
   assert.equal(result.ok,true);assert.equal(result.results[0].requestedStateConfirmed,false);assert.equal(result.results[0].verification.status,'partial');
   assert.equal(commands.filter(p=>p.cmd==='set').length,1);
-  assert.equal(result.status.events.findLast(e=>e.code==='SETTINGS').level,'warning');
+  assert.equal(result.status.events.findLast(e=>e.code==='SETTINGS').level,'success');
   assert.equal(result.status.phones[0].settings.requested.iso,1600);
 });
 test('failed readback retains the attempted target and exposes a field-level mismatch',async()=>{

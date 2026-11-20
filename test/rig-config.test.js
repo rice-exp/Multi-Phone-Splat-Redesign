@@ -16,6 +16,7 @@ async function storeFor(t) {
 }
 test('configuration initializes once and persists edits across process instances',async t=>{
   const store=await storeFor(t);await store.initialize();
+  assert.equal((await store.read()).iso,1600);
   await store.update({pcIp:'10.0.0.20',phones:[{id:'custom',name:'Side',ip:'10.0.0.101',enabled:false}]});
   const reopened=new RigConfigStore({file:store.file,env:{}});const config=await reopened.initialize();
   assert.equal(config.pcIp,'10.0.0.20');assert.deepEqual(config.phones,[{id:'custom',name:'Side',ip:'10.0.0.101',enabled:false}]);

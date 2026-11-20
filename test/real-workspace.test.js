@@ -9,7 +9,7 @@ import {RigConfigStore,DEFAULT_CONFIG} from '../lib/rig-config.mjs';
 import {RigService} from '../lib/rig-service.mjs';
 
 test('old preview bookmarks resolve to real pages with no demo module',()=>{
-  for(const [hash,page,module] of [['#prepare','/','rig-app'],['#calibration','/calibration','calibration-app'],['#frames','/frames','frame-review'],['#capture','/capture','pending-workflow'],['#results','/splats','pending-workflow']]){
+  for(const [hash,page,module] of [['#prepare','/','rig-app'],['#calibration','/calibration','calibration-app'],['#frames','/frames','frame-review'],['#capture','/capture','capture-app'],['#results','/splats','pending-workflow']]){
     const route=workspaceRoute('/',hash);assert.equal(route.path,page);assert.equal(route.module,module);
   }
   assert.equal(workspaceRoute('/frames').module,'frame-review');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {LEADER_COLOR_STORAGE,rigColorSource,colorSourceKey,colorSettingsKey,readLeaderPresets,saveLeaderPreset,selectLeaderPreset,removeLeaderPreset,sharedPreviewStatus} from '../public/js/color-profiles.js';
+import {LEADER_COLOR_STORAGE,rigColorSource,colorSourceKey,colorSettingsKey,readLeaderPresets,saveLeaderPreset,selectLeaderPreset,removeLeaderPreset,sharedPreviewStatus,cameraColorView} from '../public/js/color-profiles.js';
 import {defaultAdjustments,IDENTITY} from '../public/js/color-calibration.js';
 
 const phone=(id='a')=>({id,name:`Camera ${id}`,ip:`192.168.1.${id==='a'?1:2}`,route:`cam-${id==='a'?1:2}`,responding:true,state:{cameraId:'rear-0',iso:200,exposureMs:10,frameDurationMs:33,autoExposureEnabled:false,colorProcessing:{awbMode:'DAYLIGHT'}}});
@@ -8,6 +8,68 @@ const rig=()=>({backend:'http://127.0.0.1:4173',connected:true,checkedAt:Date.no
 const source=()=>rigColorSource(phone(),rig());
 const preset=(id='leader-a')=>({id,name:'Studio run',camera:'Camera a',sample:false,pipeline:'decoded-sRGB-image',appliedToHardware:false,chart:{name:'Test chart'},source:{capture:{...source(),videoWidth:900,videoHeight:620}},fit:{matrix:IDENTITY,after:2},adjustments:defaultAdjustments(),referenceImage:{dataUrl:'data:image/jpeg;base64,TEST'}});
 function memory(){const data=new Map();return {getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};}
+
+test('pending sliders leave the applied preview unchanged on the leader and followers until Apply',()=>{
+  const status=rig(),[leader,follower]=status.phones;
+  const profile=saveLeaderPreset(memory(),preset(),source()).presets[0];
+  const draft={source:source(),fit:profile.fit,adjustments:{...defaultAdjustments(),saturation:0}};
+  const ctx={status,profile,shared:sharedPreviewStatus(profile,status),draft,selectedIds:['a','b']};
+  for(const p of status.phones){
+    const view=cameraColorView(p,ctx);
+    assert.equal(view.render,profile);
+    assert.equal(view.render.adjustments.saturation,100);
+    assert.equal(draft.adjustments.saturation,0);
+  }
+  assert.equal(cameraColorView(follower,{...ctx,selectedIds:['a']}).render,undefined);
+  const matrix=[.2126,.7152,.0722,.2126,.7152,.0722,.2126,.7152,.0722];
+  leader.state.colorProcessing.colorCorrectionTransform=matrix;
+  leader.state.effectiveColor={transform:matrix};
+  profile.phoneApplication={transform:matrix,adjustments:draft.adjustments,matrix:IDENTITY,results:[{id:'a',ok:true},{id:'b',ok:false}]};
+  const applied={...ctx,draft:null,shared:sharedPreviewStatus(profile,status)};
+  assert.deepEqual(cameraColorView(leader,applied),{label:'Sensor transform matched · CameraScope video'});
+  leader.state.effectiveColor.transform=IDENTITY.flat();
+  assert.match(cameraColorView(leader,applied).label,/sensor transform differs/);
+  assert.match(cameraColorView(follower,applied).label,/unconfirmed/);
+  status.colorSync={source:'adjust',leaderId:'a',leaderIp:leader.ip,snapshot:{colorCorrectionTransform:matrix},results:[{id:'b',ip:follower.ip,ok:true}]};
+  follower.state.colorProcessing.colorCorrectionTransform=matrix;
+  assert.deepEqual(cameraColorView(follower,applied),{label:'Settings matched · CameraScope video'});
+});
+
+
+test('a chart-free manual preset saves and reloads the phone baseline and adjustments without a reference photo',()=>{
+  const storage=memory(),p=preset();
+  p.fit={model:'manual',matrix:IDENTITY};p.chart=null;p.referenceImage=null;p.adjustments.saturation=0;
+  saveLeaderPreset(storage,p,source());const saved=readLeaderPresets(storage).presets[0];
+  assert.equal(saved.adjustments.saturation,0);assert.equal(saved.referenceImage,null);
+  assert.deepEqual(saved.source.capture.reportedSettings,p.source.capture.reportedSettings);
+  assert.throws(()=>saveLeaderPreset(storage,{...p,fit:{matrix:IDENTITY,after:2}},source()));
+});
+
+test('saving draft run copies preserves the last applied preset, including when storage is full',()=>{
+  const storage=memory(),active=preset();
+  saveLeaderPreset(storage,active,source());
+  for(let i=0;i<13;i++){
+    const draft={...active,id:'copy-'+i,adjustments:{...active.adjustments,saturation:i}};
+    saveLeaderPreset(storage,draft,source(),{activate:false});
+  }
+  const {activeId,presets}=readLeaderPresets(storage);
+  assert.equal(activeId,active.id);
+  assert.equal(presets.length,12);
+  assert.equal(presets.find(p=>p.id===activeId).adjustments.saturation,100);
+  assert.equal(presets.at(-1).adjustments.saturation,12);
+});
+
+test('reload keeps the original chart and the last phone transform without applying a second correction to video',()=>{
+  const storage=memory(),p=preset();
+  p.appliedToHardware=true;
+  p.phoneApplication={transform:[.75,.2,.05,.2,.75,.05,.1,.2,.7],results:[{id:'a',ok:true},{id:'b',ok:true}]};
+  saveLeaderPreset(storage,p,source());
+  const [saved]=readLeaderPresets(storage).presets;
+  assert.deepEqual(saved.phoneApplication,p.phoneApplication);
+  assert.deepEqual(saved.source.capture.reportedSettings,p.source.capture.reportedSettings);
+  assert.equal(sharedPreviewStatus(saved,rig()).usable,false);
+  assert.match(sharedPreviewStatus(saved,rig()).label,/CameraScope output/);
+});
 
 test('one leader preset applies across a rig without fitting or identity-matching followers',()=>{
   const storage=memory(),state=saveLeaderPreset(storage,preset(),source()),p=state.presets[0],status=rig();
@@ -27,6 +89,16 @@ test('manual updates replace the chosen preset; new run copies and reload preser
   removeLeaderPreset(storage,'next-run');assert.equal(readLeaderPresets(storage).presets.length,1);
 });
 
+test('manual-only presets reload the sliders and reference without creating chart accuracy results',()=>{
+  const storage=memory(),p=preset();
+  p.fit={model:'manual',matrix:IDENTITY};p.adjustments.saturation=0;
+  saveLeaderPreset(storage,p,source());
+  const saved=readLeaderPresets(storage).presets[0];
+  assert.deepEqual(saved.fit,p.fit);assert.equal(saved.adjustments.saturation,0);
+  assert.equal(saved.referenceImage.dataUrl,p.referenceImage.dataUrl);
+  assert.throws(()=>saveLeaderPreset(storage,{...p,fit:{...p.fit,offset:[.1,0,0]}},source()));
+});
+
 test('affine offsets and validation survive saving, and bad validation cannot replace the shared preset',()=>{
   const storage=memory(),profile=preset();
   profile.fit={...profile.fit,model:'affine',requestedModel:'auto',offset:[-.04,-.02,-.06],validation:{method:'leave-one-patch-out',before:20,after:1,linear:8,affine:1}};
@@ -36,6 +108,18 @@ test('affine offsets and validation survive saving, and bad validation cannot re
   for(const validation of [null,{before:20,after:null},{before:20,after:30},{before:1,after:3}])assert.throws(()=>saveLeaderPreset(storage,{...profile,fit:{...profile.fit,validation}},source()),/withheld patches/);
   assert.deepEqual(readLeaderPresets(storage).presets[0].fit,profile.fit);
   assert.equal(sharedPreviewStatus(readLeaderPresets(storage).presets[0],rig()).usable,true);
+});
+
+test('an approximate fit is activated only after review and stays editable after reload',()=>{
+  const storage=memory(),profile=preset();
+  profile.fit={matrix:IDENTITY,before:44.6,after:24.4,accepted:17,validation:{before:44.6,after:29}};
+  assert.throws(()=>saveLeaderPreset(storage,profile,source()),/Review/);
+  assert.equal(readLeaderPresets(storage).activeId,null);
+  saveLeaderPreset(storage,{...profile,reviewedFit:true},source());
+  const restored=readLeaderPresets(storage).presets[0];
+  assert.deepEqual(restored.fit,profile.fit);
+  assert.equal(sharedPreviewStatus(restored,rig()).usable,true);
+  assert.throws(()=>saveLeaderPreset(storage,{...restored,fit:{...profile.fit,validation:{before:44.6,after:null}}},source()),/withheld/);
 });
 
 test('sample/device/unknown camera, poor fits and failed persistence cannot replace the active preset',()=>{

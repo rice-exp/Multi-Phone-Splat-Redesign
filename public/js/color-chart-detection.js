@@ -22,7 +22,12 @@ function downsample(image) {
 
 function patches(image) {
   const {width,height,data}=image,total=width*height,seen=new Uint8Array(total),queue=new Int32Array(total),found=[];
-  const similar=(a,b)=>Math.abs(data[a]-data[b])+Math.abs(data[a+1]-data[b+1])+Math.abs(data[a+2]-data[b+2])<32;
+  // In dim previews a fixed tolerance merges dark patches with the black frame.
+  const levels=[];
+  for(let i=0;i<data.length;i+=64)levels.push(Math.max(data[i],data[i+1],data[i+2]));
+  levels.sort((a,b)=>a-b);
+  const tolerance=clamp(levels[Math.floor(levels.length*.9)]/3,18,32);
+  const similar=(a,b)=>Math.abs(data[a]-data[b])+Math.abs(data[a+1]-data[b+1])+Math.abs(data[a+2]-data[b+2])<tolerance;
   for(let start=0;start<total;start++) {
     if(seen[start]||data[start*4+3]<250)continue;
     let head=0,tail=1,count=0,xsum=0,ysum=0,x2=0,y2=0,xy=0,minX=width,minY=height,maxX=0,maxY=0;
@@ -110,7 +115,7 @@ function validateGrid(image, chart, corners, matchedIndices) {
       }
     } catch { /* A chart can be located even if its correction cannot be fitted. */ }
   }
-  if (matchedIndices.length>=Math.ceil(samples.length*.9) && matchesReferenceOrder(samples,chart)) {
+  if (matchedIndices.length>=Math.ceil(samples.length*.8) && matchesReferenceOrder(samples,chart)) {
     return {method:'patch-grid-color-order',error:null};
   }
   return null;
@@ -169,12 +174,19 @@ export function detectColorChart(original,chart) {
     }
     if(matches.length<Math.ceil(total*.8))continue;
     chartProjection(corners);
-    if(candidates.some(c=>c.corners.every((p,i)=>Math.hypot(p[0]-corners[i][0],p[1]-corners[i][1])<.035)))continue;
     const matchedIndices=matches.map(({row,col})=>row*chart.columns+col);
+    // Multiple seed patches can find the same physical chart with slightly
+    // different corners. Compare component identities at the same grid index.
+    const components=new Map(matches.map((m,i)=>[matchedIndices[i],m.patch]));
+    const same=candidates.find(c=>matches.filter((m,i)=>c.components.get(matchedIndices[i])===m.patch).length>=.75*Math.min(matches.length,c.matched));
+    const residual=matches.reduce((sum,m)=>sum+m.error,0)/matches.length;
+    if(same&&(same.matched>matches.length||same.matched===matches.length&&same.residual<=residual))continue;
     const validation=validateGrid(original,chart,corners,matchedIndices);if(!validation)continue;
-    candidates.push({corners,matched:matches.length,matchedIndices,total,...validation});
+    const candidate={corners,matched:matches.length,matchedIndices,total,...validation,components,residual};
+    if(same)Object.assign(same,candidate);else candidates.push(candidate);
   }catch{/* A failed candidate is not evidence for a chart. */}
   if(!candidates.length)return fail();
   if(candidates.length>1)throw new Error('More than one plausible chart was found. Keep one chart in view or use manual alignment.');
-  return candidates[0];
+  const {components,residual,...detection}=candidates[0];
+  return detection;
 }

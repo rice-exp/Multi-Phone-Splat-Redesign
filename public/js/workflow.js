@@ -3,7 +3,7 @@ import {icon,esc} from './icons.js';
 export const STEPS=[
   {id:'prepare',name:'Prepare rig',detail:'Connect & configure',path:'/'},
   {id:'calibration',name:'Calibration',detail:'Color correction',path:'/calibration'},
-  {id:'capture',name:'Capture',detail:'Not connected',path:'/capture'},
+  {id:'capture',name:'Capture',detail:'Record & save a session',path:'/capture'},
   {id:'frames',name:'Frame review',detail:'Review saved captures',path:'/frames'},
   {id:'reconstruct',name:'Reconstruction',detail:'Not connected',path:'/reconstruction'},
   {id:'results',name:'Splat review',detail:'Not connected',path:'/splats'}
@@ -25,7 +25,8 @@ export function workspaceRoute(pathname,hash=''){
   // demo devices, take history and progress never enter the active workspace.
   const legacy=['/','/index.html'].includes(pathname)?STEPS.find(step=>`#${step.id}`===hash):null;
   const step=legacy||STEPS.find(step=>step.path===pathname)||STEPS[0];
-  return {...step,module:step.id==='prepare'?'rig-app':step.id==='frames'?'frame-review':step.id==='calibration'?'calibration-app':'pending-workflow'};
+  const modules={prepare:'rig-app',frames:'frame-review',calibration:'calibration-app',capture:'capture-app'};
+  return {...step,module:modules[step.id]||'pending-workflow'};
 }
 export function workspaceShell(step,description){
   return `<a class="skip-link" href="#workspace">Skip to workspace</a><aside class="sidebar">${workspaceBrand()}<div class="sidebar-label">WORKFLOW</div><nav class="step-nav" aria-label="Capture workflow">${workflowNavigation(step.id)}</nav><div class="sidebar-bottom"><a class="sidebar-action" href="/">${icon('back',18)} Prepare rig</a><a class="sidebar-action" href="/participant.html" target="participant-display">${icon('monitor',18)} Participant display</a></div></aside><div class="main-shell">${workspaceHeader(step.name)}<main id="workspace" tabindex="-1"><div class="page-heading"><div><div class="eyebrow">STEP ${String(STEPS.findIndex(s=>s.id===step.id)+1).padStart(2,'0')} OF 06</div><h1>${esc(step.name)}</h1><p>${esc(description)}</p></div></div><div id="workspace-content"></div></main></div>`;

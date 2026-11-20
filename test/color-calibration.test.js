@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {CLASSIC24,SPYDER24,IDENTITY,decodeSRGB,encodeSRGB,chartProjection,sampleChart,patchQualitySummary,fitColor,correctLinear,correctedPixels,defaultAdjustments,validateReference} from '../public/js/color-calibration.js';
+import {CLASSIC24,SPYDER24,IDENTITY,decodeSRGB,encodeSRGB,chartProjection,sampleChart,patchQualitySummary,fitColor,fitDisposition,correctLinear,correctedPixels,defaultAdjustments,validateReference} from '../public/js/color-calibration.js';
 
 const close=(a,b,tolerance=1e-7)=>assert.ok(Math.abs(a-b)<tolerance,`${a} != ${b}`);
 const cast=v=>[0.79*v[0]+0.045*v[1]+0.01*v[2],0.01*v[0]+0.68*v[1]+0.01*v[2],0.015*v[0]+0.02*v[1]+0.55*v[2]];
@@ -43,6 +43,20 @@ test('unusable patches are excluded and poorly constrained fits fail',()=>{
   assert.ok(fitColor(s).after<0.00001);assert.equal(fitColor(s).accepted,23);
   assert.throws(()=>fitColor(s.slice(0,12)),/at least 12/);
   assert.throws(()=>fitColor(Array.from({length:24},()=>({measured:[0.2,0.2,0.2],target:[0.2,0.3,0.4],usable:true}))),/independent color/);
+});
+
+test('dim Classic chart yields a bounded correction with a measured improvement on held-out colors',()=>{
+  // Center samples from the dark preview that used to throw "Correction is too extreme".
+  const rgb=[[15,9,6],[65,37,26],[25,32,41],[21,24,12],[42,37,51],[36,61,50],[62,24,7],[15,18,41],
+    [92,24,19],[20,10,18],[56,70,25],[81,42,14],[5,7,21],[20,39,17],[72,14,10],[116,80,27],
+    [78,23,33],[13,30,41],[72,72,60],[65,64,54],[51,50,42],[29,28,24],[11,12,10],[4,4,4]];
+  const fit=fitColor(samples().map((s,i)=>({...s,measured:rgb[i].map(n=>decodeSRGB(n/255))})));
+  assert.ok(fit.matrix.flat().every(n=>Number.isFinite(n)&&Math.abs(n)<=8));
+  assert.ok(fit.validation.after<fit.before/2);
+  assert.equal(fitDisposition(fit),'review');
+  for(const after of [fit.before,fit.before+5,null,NaN]){
+    assert.equal(fitDisposition({...fit,validation:{...fit.validation,after}}),'blocked');
+  }
 });
 
 test('projective alignment maps all four corners and rejects crossed, mirrored and tiny charts',()=>{
