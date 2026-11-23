@@ -46,14 +46,14 @@ function helpContent() {
           <details class="help-more" id="help-ip-addresses">
             <summary>Find the laptop and phone IP addresses</summary>
             <p>An <strong>IP address</strong> is a device’s address on the network. You need the laptop’s address and a separate address for each phone. Copy the <strong>IPv4</strong> address, which has four groups of numbers separated by dots.</p>
-            <h4>Windows laptop</h4>
+            <h4 id="help-laptop-ip" tabindex="-1">Windows laptop</h4>
             <ol>
               <li>Click <strong>Start → Settings → Network &amp; internet</strong>.</li>
               <li>Select <strong>Wi-Fi</strong>, then the network you are connected to. For a wired connection, select <strong>Ethernet</strong>.</li>
               <li>Find <strong>IPv4 address</strong> in the connection properties and write it down.</li>
             </ol>
             <p>${external('https://support.microsoft.com/en-us/windows/experience/connectivity-networking/essential-network-settings-and-tasks-in-windows','Microsoft’s guide to finding your IP address')}</p>
-            <h4>Android phone</h4>
+            <h4 id="help-phone-ip" tabindex="-1">Android phone</h4>
             <ol>
               <li>Connect to the same Wi-Fi as your laptop, then open the phone’s <strong>Settings</strong> app.</li>
               <li>Open <strong>About phone</strong> and look for <strong>IP address</strong>. On Samsung Galaxy phones, open <strong>Status information</strong> inside About phone.</li>
@@ -127,7 +127,7 @@ function helpContent() {
               <li>Click <strong>Apply to leader &amp; followers</strong> to send the correction to the phones. Adjust the manual sliders afterward if needed, and press Apply again.</li>
             </ol>
             <p>A successful automatic fit can appear in the browser previews before it is sent to the phones. Apply sends it to CameraScope. Manual slider edits take effect when you press Apply.</p>
-            <p>If detection fails, open <strong>Manual alignment</strong>. Click the centers of the four outer corner patches in the order shown, then click <strong>Calibrate from points</strong>. Use the colored squares themselves when choosing the points.</p>
+            <p>If detection fails, open <strong>Manual alignment</strong>. Click the centers of the four outer corner patches in the order shown, then click <strong>Calibrate from points</strong> when it lights up after the fourth point. Use the colored squares themselves when choosing the points.</p>
             <p>A fit with larger remaining error may offer <strong>Apply approximate correction to leader &amp; followers</strong>. Review the result first. If application is blocked, try brighter, even lighting and check the chart model and points. <strong>Use manual adjustments only</strong> lets you discard that fit and work with the sliders.</p>
             <p>To use a custom chart, open <strong>Chart layout &amp; custom reference</strong> and import a reference JSON file containing its layout and known sRGB colors. Ask the chart supplier for those values.</p>
           </details>
@@ -142,14 +142,15 @@ function helpContent() {
             </dl>
             <p><strong>Reset adjustments</strong> returns the sliders to their defaults. Press <strong>Apply</strong> afterward to send that reset to the phones.</p>
           </details>
-          <details class="help-more">
-            <summary>Save settings and use them again</summary>
+          <details class="help-more" id="help-color-presets">
+            <summary>Run / lighting preset names and saved settings</summary>
+            <p>A <strong>preset</strong> is a saved set of color settings. Give it a name that helps you remember the lighting and setup, such as “Window daylight” or “Evening indoor.” You choose this name; it is not an address or a camera setting.</p>
             <p>Apply automatically saves the preset in this browser on this laptop. Use <strong>Save as new run preset</strong> to keep a separate named copy. To continue later, find it under <strong>Saved run presets</strong>, load it, adjust if needed, then press Apply.</p>
             <p>Use <strong>Export preset</strong> to download a record of the settings. Clearing browser storage can remove local presets. Recheck the colors when the lighting, camera or exposure changes.</p>
           </details>
           <details class="help-more">
             <summary>The preview starts out dark or strongly tinted</summary>
-            <p>First check the light and camera settings in Prepare rig. You can also connect the leader preview and click <strong>Auto-balance leader preview</strong> in Calibration. This lets that phone adjust exposure and white balance automatically.</p>
+            <p>First check the light and camera settings in <strong>Prepare rig</strong>. Adjust ISO, exposure and white balance there before taking a chart frame.</p>
             <p>Wait for the picture to settle. Then adjust colors manually, or capture a fresh chart frame. To measure white balance and share it immediately, choose <strong>Measure new white balance</strong> and click <strong>Measure and sync phones</strong>.</p>
           </details>
         </div>
@@ -262,6 +263,17 @@ export function mountWorkspaceHelp(section) {
     if(!button)return;
     opener=button;
     openHelp();
+    const target=dialog.querySelector('[id="'+CSS.escape(button.dataset.helpTopic||'')+'"]');
+    if(target){
+      for(let parent=target;parent&&parent!==dialog;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+      const focus=target.tagName==='DETAILS'?target.querySelector('summary'):target;
+      requestAnimationFrame(()=>{
+        if(!dialog.open)return;
+        focus.focus({preventScroll:true});
+        body.scrollTop+=focus.getBoundingClientRect().top-body.getBoundingClientRect().top-16;
+        remember();
+      });
+    }
   });
   dialog.addEventListener('click',event=>{
     if(event.target.closest('[data-help-close]'))closeHelp();

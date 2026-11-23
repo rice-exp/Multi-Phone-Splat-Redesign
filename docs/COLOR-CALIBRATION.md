@@ -1,6 +1,6 @@
 # Leader color calibration
 
-Open `http://127.0.0.1:4317/calibration`. Color calibration computes corrections from actual camera frames or uploaded photos. The phone white balance control sends CameraScope commands. The chart fit previews on the reference frame. Apply writes the fit and slider adjustments to the leader and copies the verified settings to selected followers. Geometry acquisition and solving are not connected yet.
+Open `http://127.0.0.1:4317/calibration`. Color calibration computes corrections from frames captured from the selected leader camera. The phone white balance control sends CameraScope commands. The chart fit previews on the reference frame. Apply writes the fit and slider adjustments to the leader and copies the verified settings to selected followers. Geometry acquisition and solving are not connected yet.
 
 ## Sync white balance on the phones
 
@@ -11,16 +11,12 @@ Open `http://127.0.0.1:4317/calibration`. Color calibration computes corrections
    - **Measure new white balance** is for an automatic leader or a change in lighting. Click **Measure and sync phones**. CameraScope measures and locks the leader’s white balance with `autoColorSnapshot`, then the server copies that snapshot to followers.
    - Both modes use CameraScope’s `setColorProcessing` command over UDP 5010. ISO and exposure are separate Prepare rig settings.
 4. Inspect **Last sync**. Each match requires a separate `getState` readback of the requested settings. An offline phone or mismatched field is listed individually. If the leader fails, followers receive no writes. **Retry with same settings** reuses the verified leader snapshot on the current selection and skips phones already matching. Run a new sync when the lighting changes.
-5. Select the chart model that matches your mat. Use **Check chart in this view** on each live camera tile. Keep the mat at the subject position and turn it toward the phone being checked if needed. Each check detects the chart again in that phone's original frame and samples through its own four-corner perspective transform. No phone settings or preview presets change during a check.
-
-The check reports the median red/green and blue/green deviations from the chart reference across usable neutral patches in linear RGB. For example, red/green +20% means the gray patches look redder relative to green than the reference. Zero is the reference ratio. The check requires two neutral patches, excludes clipped or uneven samples and does not assign a pass threshold. Blurred, obscured or strongly angled views can fail detection. To inspect those manually, load that camera's chart photo and mark its four corner patch centers under **Manual alignment**. Readings also appear in the patch checks.
-
 Identical requested settings can yield different colors under glare, different lighting, or different sensors and lenses. Check a fresh processed capture as well as the preview. The fit operates in linear sRGB. Apply composes it with the leader’s captured sensor transform before writing to CameraScope. Automatic white balance evaluates the leader's scene; it does not fit the mat's individual patches. RAW sensor pixels do not have the preview correction baked in.
 
 ## Calibrate one leader, share across the rig
 
-1. Start the desired wireless previews in Prepare rig. In Color calibration, refresh the overview and click **Choose as leader** on the camera with the clearest chart view. No first camera is silently made leader. The overview shows four streams at a time, with paging for a larger rig.
-2. For chart-free adjustments, choose a responding **Leader phone**, go directly to **Adjust correction**, and continue with step 4. For a chart fit, choose the matching chart and enter a **Run / lighting preset name**. Only the leader needs to see the chart.
+1. Start the desired wireless previews in Prepare rig. In Color calibration, refresh the overview and click **Choose as leader** on the camera with the clearest chart view. No first camera is silently made leader. The overview keeps all cameras in one row. Scroll horizontally or use the arrows when the cards do not fit; only visible overview cards decode video. Choosing a leader fills **Leader / reference camera** and connects its preview automatically.
+2. For chart-free adjustments, choose a responding **Leader phone**, go directly to **Adjust correction**, and continue with step 4. For a chart fit, choose the matching chart and enter a **Run / lighting preset name**. The circled **?** opens Help at the explanation of saved names and settings. Only the leader needs to see the chart.
 3. Press **Lock color & capture chart**. The app captures a fresh leader frame, detects the chart and fits a matrix. A fit that meets the automatic accuracy target becomes the shared browser preset. A fit with higher residual error that improves held-out patches stays in Before / after for review.
 4. Adjust exposure, warmth, tint or saturation. Calibration strength is available with a chart fit. Sliders and **Reset adjustments** stage edits. Press **Apply** to update the frozen comparison (if present) and send the settings to the rig. For a grayscale check, change only **Saturation** to **0%**. Set it back to **100%** and press **Apply** again to restore the baseline saturation. The server reads back the leader’s adjusted settings and copies them to the phones selected in Prepare rig. Reapplying uses the same captured baseline. Check **Last sync** for individual results and retry offline followers. Live video shows the phone output after Apply.
 5. The current shared preset is restored after reload. **Load preset & frame** restores a chart session for editing. **Load manual preset** restores chart-free settings. Loading a preset stages its adjustments until Apply. **Save as new run preset** preserves a separate named copy. Reconnect the leader and capture again for a new automatic measurement.
@@ -37,32 +33,17 @@ A browser preset keeps the original settings and any captured frame for further 
 
 All new calibrations use the standard 3 × 3 color correction matrix. Before/after comparison, manual alignment, adjustments and saving operate on the actual source image. There is no sample image generator in the website.
 
-## Capture from a camera (no upload required)
+## Capture from the leader camera
 
-**Before capturing a chart:** if the original rig feed is dark or tinted, choose its leader, wait for live video and press **Auto-balance leader preview** under the video. Aim at the scene in the intended lighting; a neutral gray surface helps you judge the result. This optional step requests automatic exposure, unlocked AUTO white balance, and FAST color correction/tone mapping on **that phone alone**. It switches the selected view to original video and does not fit a chart, update follower phones, or overwrite saved run presets. Inspect the fresh feed and wait for the brightness and neutral colors to settle, then take a new ColorChecker frame. The regular chart fit still uses the standard 3 × 3 CCM.
+If the original feed is dark or tinted, adjust the lighting, ISO, exposure and white balance in **Prepare rig** before capturing a chart. Wait for the picture to settle.
 
-CameraScope acknowledgement alone does not confirm the requested modes. The app reads settings back separately; older phones may omit auto exposure or other fields. Readback describes requested modes, not measured exposure, color accuracy or convergence. If exposure is unreported and the preview stays dark, check the exposure controls in CameraScope and improve the lighting before capturing. If the phone's own preview looks normal but the stream still looks wrong, investigate the streaming path. Auto modes can continue to drift: keep the lighting and framing stable and recapture if they change. Chart capture locks automatic white balance on the leader before taking a new frame.
+1. Start wireless previews in Prepare rig and click **Choose as leader** on a camera in Calibration. This opens the existing receive-only MediaMTX/WHEP stream; selecting a leader does not start or reconfigure the phone. A responding phone without video can still be selected for chart-free manual adjustments.
+2. Place the physical chart in that leader's view, under even lighting without reflections. Select its matching reference model, or import a custom reference JSON.
+3. Press **Lock color & capture chart**. The app locks the leader's white balance if necessary, waits for a fresh decoded video frame and detects the chart. Before and after show two treatments of **the same frame**, resized to at most 1000 × 750 pixels. This is a preview capture, not a full-resolution still.
+4. If detection fails, choose **Manual alignment** and click the **centers** of the top-left, top-right, bottom-right and bottom-left corner patches. **Calibrate from points** stays dimmed and disabled until all four points are marked, then lights up with a prompt to click it. Arrow keys move the crosshair; Enter selects a point. For the default Classic reference, these patches are dark skin, bluish green, black and white. Follow the labels for the chosen chart.
+5. Inspect the sampling boxes and comparison. Green solid boxes pass; orange dashed boxes are excluded. Patch checks explain clipping, unevenness and other problems. At least 12 usable patches are required. Manual sliders cannot recover clipped source pixels.
 
-![Preview balance is available on a live leader before chart capture](screenshots/leader-preview-balance.jpg)
-
-Choose a reference source:
-
-- **Rig camera:** start that phone's wireless preview in Prepare rig. Refresh cameras in Color calibration, select a real camera from the backend inventory, and connect its preview. This reuses the existing receive-only MediaMTX/WHEP player; it does not start or reconfigure phones. Only fresh, responding, preview-ready cameras appear. Capture rechecks the selected source against the backend.
-- **This device's camera:** connect a USB/web camera or use the device browser camera. Permission is requested only on Connect; audio is always disabled. Browser camera access requires localhost or HTTPS (ordinary private-LAN HTTP is not sufficient). Browser/device compatibility varies.
-
-For a rig leader press **Lock color & capture chart**. For a local device test press **Capture & calibrate**. The browser waits for a new decoded video frame, freezes it, detects the chart and computes its correction. Before and after are two treatments of **the same frame**. It does not take two separate exposures or command a full-resolution phone still. Rig previews receive continuous local correction after successful leader calibration; local-device/upload work remains an image-only comparison and cannot silently become the rig's shared preset. Capture frames share the 1000 × 750 maximum preview size with uploads. A stalled/disconnected source fails instead of silently reusing an old frame.
-
-The current image remains visible if detection fails, with retry/manual guidance. Changing leader clears the working reference but leaves an existing shared preset intact until a replacement succeeds. Disconnect releases the selected camera; leaving the Color tab or closing the page also releases overview streams and render callbacks. Delayed permission responses cannot reopen a closed camera. Calibration freezes only its reference image; the source video can keep playing while adjustments are edited.
-
-## Use an uploaded chart photo
-
-- Choose the exact matching chart model, or import its verified reference data.
-- Load a JPEG, PNG or WebP under 20 MB. Convert RAW/HEIC with a consistent processing pipeline first. The browser decodes into an sRGB canvas; sampling and preview use a copy resized to at most 1000 × 750 pixels. Original files are unchanged.
-- Select **Upload a photo**, then **Auto-calibrate**. No corner clicks are required when detection succeeds. The detector resolves the chart's orientation from the reference pattern.
-- Use uniform illumination without reflections. Keep the camera's exposure, white balance and image processing fixed between reference and subsequent captures. In leader mode, only the selected leader needs to see the chart.
-- Use **Manual alignment** if needed: rotate the photo to match the reference grid, click the **centers** of the top-left, top-right, bottom-right and bottom-left corner patches, then **Calibrate from points**. Arrow keys move the crosshair; Enter selects a point. For the default Classic reference, these are dark skin, bluish green, black and white. Follow the labels for the selected chart. Changing the reference, photo, orientation or corners invalidates the previous fit.
-- Patch quality is shown even if the solve fails. Green solid sampling boxes pass; orange dashed boxes fail. The checks below the alignment image report usable counts, rejection reasons, and individual patches in chart order. Clipping shows the percentage of sampled pixels with any RGB channel at or below 2 or at or above 253; more than 10% excludes that patch. Unevenness, insufficient size and image bounds have separate guidance. Correct corner alignment does not guarantee usable color measurements, and the minimum of 12 remains enforced. Preview sliders cannot recover clipped source pixels.
-- Product listing images and screenshots can exercise the workflow but do not measure your camera's response. Capture the physical chart with the selected leader under the rig's actual lighting for a meaningful preset.
+The captured frame stays visible if detection fails. Changing leaders clears the working reference but keeps an existing saved preset until a replacement succeeds. Leaving Calibration closes its preview connections and render callbacks. A stalled or disconnected source fails instead of reusing an old frame.
 
 Custom JSON: `name`, `colorSpace: "sRGB"`, integer `columns` and `rows` (2–12 each; at least 12 total patches), `patches` (row-major RGB triplets, each channel 0–255), and `source`. Lab and raw sensor values cannot be supplied as sRGB. Nonuniform layouts need a different sampling model.
 
@@ -110,7 +91,7 @@ Run `npm test` for the current suite. Regressions cover the Classic 6 × 4 layou
 
 Synthetic sources below are test fixtures only; the website has no sample-photo controls.
 
-Patch-diagnostic regression: uploading `docs/screenshots/synthetic-clipped-chart-qa.png` and marking the four corner centers reproduces 10 usable patches: the first 14 have a clipped red channel. The solve remains blocked, saving/application stays disabled, and all rejection reasons remain visible. This fixture tests rejection behavior only; it is not a reference chart or a reconstruction of the user's photo.
+Patch-diagnostic fixture `docs/screenshots/synthetic-clipped-chart-qa.png`, sampled at its four corner centers, reproduces 10 usable patches: the first 14 have a clipped red channel. The solve remains blocked, saving/application stays disabled, and all rejection reasons remain visible. This fixture tests rejection behavior only; it is not a reference chart or a reconstruction of the user's photo.
 
 ![Patch checks remain visible after a failed fit on the synthetic clipping fixture](screenshots/color-patch-quality-qa.jpg)
 
