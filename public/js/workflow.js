@@ -15,7 +15,7 @@ export function themeToggle(){
   return `<button type="button" class="button secondary theme-toggle" data-theme-toggle aria-label="Dark mode" aria-pressed="${document.documentElement.dataset.theme==='dark'}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 13.3A9 9 0 0 1 10.7 3.2a9 9 0 1 0 10.1 10.1Z"/></svg><span>Dark mode</span></button>`;
 }
 export function workspaceHeader(name,tools=''){
-  return `<header class="topbar"><div class="breadcrumb"><span class="breadcrumb-root">Capture workspace</span>${icon('chevron',14)}<strong>${esc(name)}</strong></div><div class="topbar-tools">${tools}${themeToggle()}</div></header>`;
+  return `<header class="topbar"><div class="breadcrumb"><span class="breadcrumb-root">Capture workspace</span>${icon('chevron',14)}<strong>${esc(name)}</strong></div><div class="topbar-tools">${tools}${themeToggle()}<button type="button" class="button secondary help-trigger" data-help-open aria-haspopup="dialog" aria-controls="workspace-help">${icon('info',16)}<span>Help</span></button></div></header>`;
 }
 export function workflowNavigation(active){
   return STEPS.map((step,index)=>`<a class="nav-step ${step.id===active?'active':''}" href="${step.path}" ${step.id===active?'aria-current="step"':''}><span class="nav-number">${String(index+1).padStart(2,'0')}</span><span><b>${step.name}</b><small>${step.detail}</small></span></a>`).join('');

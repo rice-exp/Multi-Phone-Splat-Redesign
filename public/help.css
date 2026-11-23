@@ -1,0 +1,70 @@
+.help-trigger { min-height:36px; padding:8px 12px; font-size:12px; }
+.topbar:has(.help-trigger) { height:auto; min-height:72px; flex-wrap:wrap; padding-block:12px; }
+.topbar:has(.help-trigger) .topbar-tools { max-width:100%; flex-wrap:wrap; justify-content:flex-end; margin-left:auto; }
+body.workspace-help-open { overflow:hidden; }
+dialog.workspace-help {
+  position:fixed;
+  inset:12px 12px 12px auto;
+  margin:0;
+  width:min(600px,calc(100vw - 24px));
+  max-width:none;
+  height:calc(100dvh - 24px);
+  max-height:none;
+  padding:0;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:var(--paper);
+  color:var(--ink);
+  box-shadow:var(--shadow);
+}
+.workspace-help[open] { display:flex; flex-direction:column; }
+.workspace-help::backdrop { background:#10221d55; backdrop-filter:none; }
+.help-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:26px 28px 22px; border-bottom:1px solid var(--line); }
+.help-heading h2 { margin:0; font-size:23px; font-weight:600; letter-spacing:-.5px; }
+.help-heading p { margin-top:7px; color:var(--muted); font-size:13px; line-height:1.6; }
+.help-close { flex:none; width:40px; height:40px; }
+.help-body { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding:24px 28px; }
+.help-intro { font-size:14px; line-height:1.65; margin:0 0 24px; }
+.help-topic { border:1px solid var(--line); border-radius:12px; margin-bottom:12px; overflow:clip; }
+.help-topic>summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px; list-style:none; cursor:pointer; font-size:15px; font-weight:600; }
+.help-topic>summary::-webkit-details-marker { display:none; }
+.help-topic>summary small { display:block; margin-top:5px; color:var(--muted); font-size:12px; font-weight:400; line-height:1.5; }
+.help-topic>summary svg { flex:none; color:var(--green); }
+.help-topic>summary:hover { background:var(--mint); }
+.help-topic[open]>summary { background:var(--mint); border-bottom:1px solid var(--line); }
+.help-topic[open]>summary>svg { transform:rotate(90deg); }
+.help-topic>summary:focus-visible { outline-offset:-4px; }
+.help-content { padding:6px 18px 20px; font-size:14px; line-height:1.75; overflow-wrap:anywhere; }
+.help-content h3 { margin:22px 0 10px; font-size:15px; font-weight:650; }
+.help-content h4 { margin:18px 0 8px; font-size:14px; font-weight:650; }
+.help-content p { margin:14px 0 0; }
+.help-content ol { padding-left:24px; margin:14px 0; }
+.help-content li { padding-left:3px; margin-bottom:12px; }
+.help-content a { color:var(--green); text-decoration:underline; text-underline-offset:3px; }
+.help-content a svg { display:inline-block; vertical-align:middle; }
+.help-content code { font-size:.92em; padding:2px 5px; border-radius:4px; background:var(--bg); overflow-wrap:anywhere; }
+.help-content kbd { font:inherit; font-size:.9em; padding:1px 5px; border:1px solid var(--line); border-radius:4px; background:var(--bg); }
+.help-more { margin-top:16px; border-top:1px solid var(--line); padding-top:14px; }
+.help-more>summary { cursor:pointer; font-weight:600; font-size:14px; line-height:1.6; padding:3px 0; }
+.help-more>summary::marker { color:var(--green); }
+.help-note { margin-top:18px; padding:14px 16px; border-left:3px solid var(--green); border-radius:0 6px 6px 0; background:var(--mint); }
+.help-note p { margin-top:5px; }
+.help-content dl { margin:14px 0; }
+.help-content dt { font-weight:600; margin-top:12px; }
+.help-content dd { margin:2px 0 0; }
+.help-content .help-next { margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
+.help-links-note { margin:22px 0 2px; color:var(--muted); font-size:12px; line-height:1.6; }
+.help-links-note svg { vertical-align:middle; }
+.help-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+@media(max-width:760px) {
+  .topbar:has(.help-trigger) { min-height:56px; padding-block:8px; }
+  .help-trigger { padding:8px 10px; flex:none; }
+}
+@media(max-width:480px) {
+  dialog.workspace-help { inset:0; width:100%; height:100dvh; border-radius:0; border:0; }
+  .help-heading { padding:20px 18px 16px; }
+  .help-body { padding:18px 16px max(20px,env(safe-area-inset-bottom)); }
+  .help-content { padding:4px 14px 18px; }
+  .help-topic>summary { padding:16px 14px; }
+}
