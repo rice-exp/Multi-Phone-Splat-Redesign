@@ -145,8 +145,14 @@ function helpContent() {
           <details class="help-more" id="help-color-presets">
             <summary>Run / lighting preset names and saved settings</summary>
             <p>A <strong>preset</strong> is a saved set of color settings. Give it a name that helps you remember the lighting and setup, such as “Window daylight” or “Evening indoor.” You choose this name; it is not an address or a camera setting.</p>
-            <p>Apply automatically saves the preset in this browser on this laptop. Use <strong>Save as new run preset</strong> to keep a separate named copy. To continue later, find it under <strong>Saved run presets</strong>, load it, adjust if needed, then press Apply.</p>
-            <p>Use <strong>Export preset</strong> to download a record of the settings. Clearing browser storage can remove local presets. Recheck the colors when the lighting, camera or exposure changes.</p>
+            <p><strong>Apply</strong> sends the color settings to the cameras and saves them in this browser. When you edit an existing preset, Apply updates that saved preset. <strong>Save as new run preset</strong> keeps a separate copy without changing the cameras. Give the copy a recognizable name in <strong>Run / lighting preset name</strong> before saving it.</p>
+            <ol>
+              <li>Click <strong>View saved presets</strong> near the top of Calibration to jump to your saved setups.</li>
+              <li>Use <strong>Choose a saved preset</strong> to browse the names. Sort by date (newest or oldest first) or name (A–Z or Z–A). Its name, last-saved date and leader appear beside the dropdown.</li>
+              <li>Click <strong>Load preset</strong>. The app brings you to its adjustments for review. Press <strong>Apply</strong> when you are ready to use those settings on the cameras.</li>
+              <li>To remove a saved copy, choose it in the dropdown and click <strong>Delete preset</strong>.</li>
+            </ol>
+            <p>If the list is empty, Apply your first color setup to save it. Presets stay in this browser on this laptop; clearing browser storage can remove them. Recheck the colors when the lighting, camera or exposure changes.</p>
           </details>
           <details class="help-more">
             <summary>The preview starts out dark or strongly tinted</summary>

@@ -3908,3 +3908,31 @@ dialog::backdrop {
 .color-tile-info .chart-reading {white-space: normal; overflow-wrap: anywhere;}
 
 .color-fleet-chart label {display: grid; gap: .35rem; max-width: 24rem; margin-bottom: 1rem;}
+
+.color-preset-shortcut { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px 24px; margin:24px 0; border:1px solid var(--line); border-radius:12px; background:var(--mint); }
+.color-preset-shortcut strong { display:block; font-size:15px; }
+.color-preset-shortcut p { margin:6px 0 0; font-size:13px; line-height:1.6; color:var(--muted); }
+.color-preset-shortcut .button { flex:none; text-align:center; }
+#color-saved-presets,#color-adjustments { scroll-margin-top:24px; }
+#color-saved-presets:focus-visible,#color-adjustments:focus-visible { outline:2px solid var(--green); outline-offset:6px; border-radius:8px; }
+.color-preset-browser { display:grid; grid-template-columns:minmax(240px,.8fr) minmax(0,1.2fr); align-items:start; gap:24px; margin-top:24px; }
+.color-preset-picker { display:grid; gap:10px; min-width:0; }
+.color-preset-picker label { font-size:13px; font-weight:600; }
+.color-preset-picker label[for="color-preset-sort"] { margin-top:10px; }
+.color-preset-picker select { width:100%; min-width:0; }
+.color-preset-picker .cal-caption { margin:0; }
+.color-preset-details { min-width:0; padding:24px; border:1px solid var(--line); border-radius:12px; background:var(--paper); overflow-wrap:anywhere; }
+.color-preset-details h3 { margin:0 0 18px; font-size:18px; }
+.color-preset-details dl { display:grid; gap:14px; margin:0 0 18px; font-size:13px; }
+.color-preset-details dt { color:var(--muted); margin-bottom:5px; }
+.color-preset-details dd { margin:0; }
+.color-preset-details>p { font-size:13px; line-height:1.7; color:var(--muted); }
+.color-preset-details .cal-actions { margin-bottom:0; }
+.color-editing-preset { padding:12px 14px; background:var(--mint); border-radius:8px; }
+#color-preset-notice:empty { display:none; }
+@media(max-width:760px) {
+  .color-preset-shortcut { flex-direction:column; align-items:flex-start; padding:18px; }
+  .color-preset-shortcut .button { max-width:100%; }
+  .color-preset-browser { grid-template-columns:minmax(0,1fr); gap:18px; }
+  .color-preset-details { padding:18px; }
+}
