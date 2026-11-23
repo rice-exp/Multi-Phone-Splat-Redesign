@@ -1,70 +1,99 @@
 import {esc,icon} from './icons.js';
 import {LivePreview,previewEndpoint} from './live-preview.js';
-import {availableColorCameras,nextVideoFrame,originalVideoPixels} from './color-camera.js';
+import {availableColorCameras} from './color-camera.js';
 import {ColorLivePreview} from './color-live-preview.js';
-import {colorSettingsKey,cameraColorView,rigColorSource} from './color-profiles.js';
+import {cameraColorView} from './color-profiles.js';
 
-// Four streams at a time keeps the overview usable on a laptop or phone.
+// Keep every camera in one strip, decoding only the previews in view.
 export class ColorCameraOverview {
-  constructor(select, checkChart) {
-    this.checks=new Map();this.select=select;this.page=0;this.entries=new Map();this.element=document.createElement('div');
+  constructor(select) {
+    this.select=select;this.entries=new Map();this.element=document.createElement('div');
     this.element.className='color-camera-overview';
+    this.element.innerHTML='<div class="color-camera-grid" role="region" aria-label="Camera previews"></div><div class="color-camera-navigation" hidden><span>Scroll to see more cameras</span><button type="button" class="button secondary small" data-camera-scroll="-1" aria-label="Previous cameras">←</button><button type="button" class="button secondary small" data-camera-scroll="1" aria-label="Next cameras">→</button></div><p class="cal-caption color-camera-empty"></p>';
+    this.grid=this.element.querySelector('.color-camera-grid');
+    this.navigation=this.element.querySelector('.color-camera-navigation');
     this.element.addEventListener('click',event=>{
       const button=event.target.closest('button');if(!button||button.disabled)return;
       if(button.dataset.cameraSelect)this.select(button.dataset.cameraSelect);
-      if(button.dataset.chartCheck)checkChart(button.dataset.chartCheck);
-      if(button.dataset.cameraPage){this.page+=Number(button.dataset.cameraPage);this.update(this.context,this.selected,this.busy);}
+      if(button.dataset.cameraScroll)this.grid.scrollBy({left:Number(button.dataset.cameraScroll)*this.grid.clientWidth*.85,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
     });
+    this.grid.addEventListener('scroll',()=>this.updateNavigation(),{passive:true});
+    this.resize=new ResizeObserver(()=>this.updateNavigation());this.resize.observe(this.grid);
+    this.visibility=new IntersectionObserver(changes=>{
+      for(const change of changes){
+        const entry=this.entries.get(change.target.dataset.cameraId);
+        if(entry){entry.visible=change.isIntersecting;this.updatePreview(entry);}
+      }
+    },{root:this.grid,threshold:0.01});
   }
-  mount(host){if(host)host.replaceChildren(this.element);}
-  update(context,selected='',busy=false) {
-    const {status}=context;
-    this.context=context;this.selected=selected;this.busy=busy;
-    const all=status?.phones||[],available=availableColorCameras(status);
-    this.page=Math.min(this.page,Math.max(0,Math.ceil(all.length/4)-1));
-    const visible=all.slice(this.page*4,this.page*4+4),ids=new Set(visible.map(p=>p.id));
-    for(const [id,entry] of this.entries)if(!ids.has(id)){entry.color?.close();entry.player?.close();entry.card.remove();this.entries.delete(id);}
-    if(!this.grid){this.element.innerHTML='<div class="color-camera-grid"></div><div class="color-camera-pagination"></div>';this.grid=this.element.querySelector('.color-camera-grid');}
-    this.element.querySelector('.color-camera-pagination').innerHTML=all.length?`<span>${all.length} cameras · showing ${this.page*4+1}–${Math.min(all.length,this.page*4+4)}</span>${all.length>4?`<button class="button secondary small" data-camera-page="-1" ${this.page===0?'disabled':''}>Previous</button><button class="button secondary small" data-camera-page="1" ${(this.page+1)*4>=all.length?'disabled':''}>Next</button>`:''}`:`<p class="cal-caption">${status?.connected?'No phones configured. Add phone addresses in Prepare rig.':'Camera inventory unavailable. Refresh cameras to check the connection.'}</p>`;
-    for(const phone of visible) {
-      let entry=this.entries.get(phone.id);
-      if(!entry){
-        const card=document.createElement('article');card.className='color-camera-tile';
-        card.innerHTML=`<div class="color-tile-video"></div><div class="color-tile-info"><strong>${esc(phone.name)}</strong><small>${esc(phone.ip)}</small><span class="color-tile-stream" role="status"></span><span class="color-tile-profile"></span><button class="button secondary small" data-camera-select="${esc(phone.id)}">Choose as leader</button><button class="button secondary small" data-chart-check="${esc(phone.id)}">Check chart in this view</button><small class="chart-reading"></small></div>`;
-        entry={card};this.entries.set(phone.id,entry);this.grid.append(card);
+  rememberScroll(){if(this.grid.isConnected)this.scrollLeft=this.grid.scrollLeft;}
+  mount(host){
+    if(!host)return;
+    host.replaceChildren(this.element);
+    this.grid.scrollLeft=this.scrollLeft||0;
+    this.updateNavigation();
+  }
+  updateNavigation(){
+    if(!this.grid.isConnected)return;
+    this.scrollLeft=this.grid.scrollLeft;
+    const max=this.grid.scrollWidth-this.grid.clientWidth,overflows=max>2;
+    this.navigation.hidden=!overflows;
+    this.grid.tabIndex=overflows?0:-1;
+    this.navigation.querySelector('[data-camera-scroll="-1"]').disabled=this.scrollLeft<=2;
+    this.navigation.querySelector('[data-camera-scroll="1"]').disabled=this.scrollLeft>=max-2;
+  }
+  stopPreview(entry){
+    entry.color?.close();entry.player?.close();entry.color=null;entry.player=null;entry.video=null;entry.live=false;
+  }
+  updatePreview(entry){
+    const {phone,path}=entry,host=entry.card.querySelector('.color-tile-video'),stream=entry.card.querySelector('.color-tile-stream');
+    if(path&&entry.visible){
+      if(!entry.player){
+        const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;
+        video.setAttribute('aria-label',`Color overview: ${phone.name}`);
+        entry.video=video;entry.failed=false;
+        entry.color=new ColorLivePreview(video,{onError:()=>{entry.failed=true;entry.card.querySelector('.color-tile-profile').textContent='Correction unavailable · original preview';}});
+        host.replaceChildren(video,entry.color.canvas);
+        entry.player=new LivePreview(video,path,(message,tone)=>{stream.textContent=message;entry.live=tone==='success';entry.color?.setProfile(entry.live&&!entry.failed?entry.view?.render:null);});
       }
-      const online=available.some(p=>p.id===phone.id),path=online?previewEndpoint(phone,status,location.origin):'';
-      const host=entry.card.querySelector('.color-tile-video'),stream=entry.card.querySelector('.color-tile-stream');
-      if(entry.path!==path || entry.ip!==phone.ip){
-        entry.ip=phone.ip;entry.card.querySelector('small').textContent=phone.ip;
-        entry.color?.close();entry.player?.close();entry.color=null;entry.player=null;entry.video=null;entry.path=path;entry.live=false;
-        if(path){
-          const video=document.createElement('video');video.autoplay=true;video.muted=true;video.playsInline=true;video.setAttribute('aria-label',`Color overview: ${phone.name}`);
-          entry.video=video;entry.color=new ColorLivePreview(video,{onError:()=>{entry.failed=true;entry.card.querySelector('.color-tile-profile').textContent='Correction unavailable · original preview';}});
-          host.replaceChildren(video,entry.color.canvas);entry.failed=false;
-          entry.player=new LivePreview(video,path,(message,tone)=>{stream.textContent=message;entry.live=tone==='success';entry.color?.setProfile(entry.live&&!entry.failed?entry.view?.render:null);entry.card.querySelector('[data-chart-check]').disabled=this.busy||!entry.live;});
-        }else{host.innerHTML=`<div class="color-live-empty">${icon('camera',24)}<span>Preview unavailable</span></div>`;stream.textContent=phone.responding?'Start preview in Prepare rig':'Camera offline';}
-      }
-      entry.card.classList.toggle('selected',selected===phone.id);
-      const button=entry.card.querySelector('button');button.disabled=busy||!online;button.textContent=selected===phone.id?'Selected leader':'Choose as leader';
-      const checkButton=entry.card.querySelector('[data-chart-check]');
-      checkButton.disabled=busy||!online||!entry.live;
-      const reading=this.checks.get(phone.id);
-      if(reading && (reading.ip!==phone.ip || !online || reading.settings!==colorSettingsKey(rigColorSource(phone,status))))this.checks.delete(phone.id);
-      entry.card.querySelector('.chart-reading').textContent=this.checks.get(phone.id)?.label||'';
-      entry.view=cameraColorView(phone,context);
-      entry.color?.setProfile(online&&entry.live&&!entry.failed?entry.view.render:null);
-      entry.card.querySelector('strong').textContent=phone.name;
-      entry.card.querySelector('.color-tile-profile').textContent=entry.failed?'Correction unavailable · original preview':entry.view.label;
+      entry.color?.setProfile(entry.live&&!entry.failed?entry.view?.render:null);
+    }else{
+      this.stopPreview(entry);
+      host.innerHTML=`<div class="color-live-empty">${icon('camera',24)}<span>${path?'Preview loads when in view':'Preview unavailable'}</span></div>`;
+      stream.textContent=path?'':phone.responding?'Start preview in Prepare rig':'Camera offline';
     }
   }
-  async captureView(phone) {
-    const entry = this.entries.get(phone.id);
-    if (!entry?.live || !entry.video) throw new Error('Wait for live frames from this phone.');
-    const video = entry.video;
-    await nextVideoFrame(video);
-    if (!entry.live || this.entries.get(phone.id)?.video !== video) throw new Error('The camera view changed. Check again.');
-    return originalVideoPixels(video);
+  update(context,selected='',busy=false) {
+    const {status}=context,all=status?.phones||[],available=new Set(availableColorCameras(status).map(p=>p.id)),ids=new Set(all.map(p=>p.id));
+    for(const [id,entry] of this.entries)if(!ids.has(id)){
+      this.visibility.unobserve(entry.card);this.stopPreview(entry);entry.card.remove();this.entries.delete(id);
+    }
+    const empty=this.element.querySelector('.color-camera-empty');empty.hidden=!!all.length;
+    empty.textContent=all.length?'':status?.connected?'No phones configured. Add phone addresses in Prepare rig.':'Camera inventory unavailable. Refresh cameras to check the connection.';
+    for(const [index,phone] of all.entries()){
+      let entry=this.entries.get(phone.id);
+      if(!entry){
+        const card=document.createElement('article');card.className='color-camera-tile';card.dataset.cameraId=phone.id;
+        card.innerHTML=`<div class="color-tile-video"></div><div class="color-tile-info"><strong></strong><small></small><span class="color-tile-stream" role="status"></span><span class="color-tile-profile"></span><button type="button" class="button secondary small" data-camera-select="${esc(phone.id)}">Choose as leader</button></div>`;
+        entry={card,visible:false};this.entries.set(phone.id,entry);
+        this.grid.append(card);this.visibility.observe(card);
+      }
+      if(this.grid.children[index]!==entry.card)this.grid.insertBefore(entry.card,this.grid.children[index]);
+      const path=available.has(phone.id)?previewEndpoint(phone,status,location.origin):'';
+      if(entry.path!==path||entry.phone?.ip!==phone.ip)this.stopPreview(entry);
+      entry.phone=phone;entry.path=path;entry.view=cameraColorView(phone,context);
+      entry.card.classList.toggle('selected',selected===phone.id);
+      const button=entry.card.querySelector('button');button.disabled=busy||!phone.responding;
+      button.textContent=selected===phone.id?'Selected leader':'Choose as leader';button.setAttribute('aria-pressed',String(selected===phone.id));
+      entry.card.querySelector('strong').textContent=phone.name;entry.card.querySelector('small').textContent=phone.ip;
+      entry.card.querySelector('.color-tile-profile').textContent=entry.failed?'Correction unavailable · original preview':entry.view.label;
+      this.updatePreview(entry);
+    }
+    this.updateNavigation();
   }
-  close(){for(const entry of this.entries.values()){entry.color?.close();entry.player?.close();}this.entries.clear();this.element.replaceChildren();this.grid=null;}
+  close(){
+    this.resize.disconnect();this.visibility.disconnect();
+    for(const entry of this.entries.values())this.stopPreview(entry);
+    this.entries.clear();this.element.replaceChildren();
+  }
 }
